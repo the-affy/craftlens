@@ -1,0 +1,20 @@
+{
+  "name": "@anti-slop/rule-engine",
+  "version": "0.1.0",
+  "description": "Anti-Slop rule engine, registry, rule implementations, and cluster coordinator",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@anti-slop/config": "*",
+    "@anti-slop/core": "*",
+    "@anti-slop/parser": "*",
+    "typescript": "^5.6.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

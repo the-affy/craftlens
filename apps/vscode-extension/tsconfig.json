@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/parser" },
+    { "path": "../../packages/config" },
+    { "path": "../../packages/rule-engine" }
+  ],
+  "include": ["src/**/*"]
+}

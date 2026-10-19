@@ -1,0 +1,109 @@
+{
+  "name": "anti-slop-vscode",
+  "displayName": "Anti-Slop",
+  "description": "High-precision, context-aware code quality linter detecting fragile patterns, AI patchwork, and UX flaws",
+  "version": "0.1.0",
+  "publisher": "anti-slop",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antiSlop.scanCurrentFile",
+        "title": "Anti-Slop: Scan Current File",
+        "category": "Anti-Slop"
+      },
+      {
+        "command": "antiSlop.scanWorkspace",
+        "title": "Anti-Slop: Scan Workspace",
+        "category": "Anti-Slop"
+      },
+      {
+        "command": "antiSlop.showReport",
+        "title": "Anti-Slop: Show Report",
+        "category": "Anti-Slop"
+      },
+      {
+        "command": "antiSlop.explainFinding",
+        "title": "Anti-Slop: Explain Finding",
+        "category": "Anti-Slop"
+      },
+      {
+        "command": "antiSlop.ignoreRule",
+        "title": "Anti-Slop: Ignore Rule",
+        "category": "Anti-Slop"
+      },
+      {
+        "command": "antiSlop.resetSuppressions",
+        "title": "Anti-Slop: Reset Suppressions",
+        "category": "Anti-Slop"
+      }
+    ],
+    "configuration": {
+      "title": "Anti-Slop",
+      "properties": {
+        "antiSlop.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable Anti-Slop analysis."
+        },
+        "antiSlop.severity": {
+          "type": "string",
+          "enum": [
+            "blocker",
+            "error",
+            "warning",
+            "suggestion",
+            "info"
+          ],
+          "default": "warning",
+          "description": "Minimum severity threshold for displayed diagnostics."
+        },
+        "antiSlop.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run Anti-Slop diagnostics whenever a file is saved."
+        },
+        "antiSlop.scanOnChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run fast-path Anti-Slop diagnostics as files are edited (debounced)."
+        },
+        "antiSlop.maxDiagnosticsPerFile": {
+          "type": "number",
+          "default": 50,
+          "description": "Maximum number of diagnostics reported per file."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@anti-slop/config": "*",
+    "@anti-slop/core": "*",
+    "@anti-slop/parser": "*",
+    "@anti-slop/rule-engine": "*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  }
+}

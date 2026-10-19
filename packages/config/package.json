@@ -1,0 +1,17 @@
+{
+  "name": "@anti-slop/config",
+  "version": "0.1.0",
+  "description": "Anti-Slop configuration schema, defaults, and suppression parsing",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@anti-slop/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

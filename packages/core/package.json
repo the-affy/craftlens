@@ -1,0 +1,14 @@
+{
+  "name": "@anti-slop/core",
+  "version": "0.1.0",
+  "description": "Anti-Slop core types, analysis models, evidence, scoring, and engine contracts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

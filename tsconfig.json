@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/parser" },
+    { "path": "./packages/config" },
+    { "path": "./packages/rule-engine" },
+    { "path": "./apps/vscode-extension" }
+  ]
+}
