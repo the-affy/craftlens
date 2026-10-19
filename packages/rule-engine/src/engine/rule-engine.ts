@@ -5,6 +5,8 @@ import {
   ProjectContext,
   createDefaultProjectContext,
   isSeverityAtLeast,
+  isAuditLevelSufficient,
+  computeFindingFingerprint,
 } from '@anti-slop/core';
 import { AstCache, ParsedDocument } from '@anti-slop/parser';
 import { AntiSlopConfig, DEFAULT_CONFIG, SuppressionManager } from '@anti-slop/config';
@@ -102,6 +104,11 @@ export class RuleEngine {
         continue;
       }
 
+      // Check minimum audit level requirement (easy < moderate < hard < strict)
+      if (rule.minimumAuditLevel && !isAuditLevelSufficient(config.auditLevel, rule.minimumAuditLevel)) {
+        continue;
+      }
+
       const rStart = performance.now();
       try {
         const findings = rule.detect(analysisContext);
@@ -119,6 +126,14 @@ export class RuleEngine {
           // Check suppressions
           if (suppressionManager.isSuppressed(finding.ruleId, finding.location.start.line)) {
             continue;
+          }
+
+          // Set default findingType and fingerprint if not present
+          if (!finding.findingType) {
+            finding.findingType = finding.severity === 'suggestion' || finding.severity === 'info' ? 'suggestion' : 'problem';
+          }
+          if (!finding.fingerprint) {
+            finding.fingerprint = computeFindingFingerprint(finding);
           }
 
           allFindings.push(finding);

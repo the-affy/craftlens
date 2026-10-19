@@ -2,6 +2,7 @@ import { Severity } from './severity.js';
 import { FixPolicy } from './fix.js';
 import { Finding } from './finding.js';
 import { AnalysisContext, DetectionEngine, Platform, RuleCategory } from './context.js';
+import { AuditLevel } from './audit-level.js';
 
 export interface AntiSlopRule {
   /** Stable unique identifier (e.g., AP-008, FN-015) */
@@ -18,6 +19,8 @@ export interface AntiSlopRule {
   fix: FixPolicy;
   platforms: Platform[];
   tags: string[];
+  /** Minimum audit sensitivity level required for this rule to trigger */
+  minimumAuditLevel?: AuditLevel;
   clusterGroups?: string[];
   relatedRules?: string[];
   /** Primary detection entry point */

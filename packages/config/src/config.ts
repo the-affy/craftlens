@@ -1,4 +1,4 @@
-import { Severity } from '@anti-slop/core';
+import { AuditLevel, Severity } from '@anti-slop/core';
 
 export interface RuleConfigEntry {
   enabled?: boolean;
@@ -9,8 +9,12 @@ export interface RuleConfigEntry {
 export interface AntiSlopConfig {
   enabled: boolean;
   severity: Severity;
+  auditLevel: AuditLevel;
+  autoAudit: boolean;
   scanOnSave: boolean;
   scanOnChange: boolean;
+  enableCodeLens: boolean;
+  persistAudit: boolean;
   maxDiagnosticsPerFile: number;
   rules: Record<string, RuleConfigEntry>;
   suppressions: string[];
@@ -19,8 +23,12 @@ export interface AntiSlopConfig {
 export const DEFAULT_CONFIG: AntiSlopConfig = {
   enabled: true,
   severity: 'warning',
+  auditLevel: 'moderate',
+  autoAudit: true,
   scanOnSave: true,
   scanOnChange: true,
+  enableCodeLens: true,
+  persistAudit: true,
   maxDiagnosticsPerFile: 50,
   rules: {},
   suppressions: [],

@@ -7,7 +7,7 @@ describe('Integration: RuleEngine & Core Infrastructure', () => {
   it('executes end-to-end analysis across registered rules and caches AST', () => {
     const registry = new RuleRegistry();
     registerDefaultRules(registry);
-    expect(registry.size()).toBe(3);
+    expect(registry.size()).toBe(6);
 
     const engine = new RuleEngine(registry);
 

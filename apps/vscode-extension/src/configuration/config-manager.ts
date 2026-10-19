@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AntiSlopConfig, DEFAULT_CONFIG } from '@anti-slop/config';
-import { Severity } from '@anti-slop/core';
+import { AuditLevel, Severity } from '@anti-slop/core';
 
 export class ConfigurationManager {
   private currentConfig: AntiSlopConfig = { ...DEFAULT_CONFIG };
@@ -20,8 +20,12 @@ export class ConfigurationManager {
     this.currentConfig = {
       enabled: vsConfig.get<boolean>('enabled', true),
       severity: vsConfig.get<Severity>('severity', 'warning'),
+      auditLevel: vsConfig.get<AuditLevel>('auditLevel', 'moderate'),
+      autoAudit: vsConfig.get<boolean>('autoAudit', true),
       scanOnSave: vsConfig.get<boolean>('scanOnSave', true),
       scanOnChange: vsConfig.get<boolean>('scanOnChange', true),
+      enableCodeLens: vsConfig.get<boolean>('enableCodeLens', true),
+      persistAudit: vsConfig.get<boolean>('persistAudit', true),
       maxDiagnosticsPerFile: vsConfig.get<number>('maxDiagnosticsPerFile', 50),
       rules: vsConfig.get<Record<string, any>>('rules', {}),
       suppressions: vsConfig.get<string[]>('suppressions', []),

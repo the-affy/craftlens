@@ -21,6 +21,7 @@ export const AP_014_RULE: AntiSlopRule = {
   fix: 'safe',
   platforms: ['typescript'],
   tags: ['types', 'typescript', 'ai-patchwork', 'soundness'],
+  minimumAuditLevel: 'moderate',
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {

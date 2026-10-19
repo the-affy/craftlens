@@ -6,3 +6,5 @@ export * from './finding.js';
 export * from './context.js';
 export * from './rule.js';
 export * from './cluster.js';
+export * from './audit-level.js';
+export * from './checklist.js';

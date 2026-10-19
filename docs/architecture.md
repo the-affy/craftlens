@@ -2,35 +2,48 @@
 
 ## Overview
 
-**Anti-Slop** is an opinionated, context-aware code quality linter designed to detect fragile engineering decisions, AI patchwork, accessibility issues, and template UI patterns in modern software codebases.
+**Anti-Slop** is an opinionated, context-aware continuous code quality reviewer designed to detect fragile engineering decisions, AI patchwork, accessibility issues, and template UI patterns in modern software codebases.
 
 Crucially, **Anti-Slop is NOT an AI detector**. It measures **code quality, structural invariants, and engineering soundness**, never authorship.
 
+---
+
+## Continuous Review & Master Audit Architecture
+
 ```
-                    ┌──────────────────────────┐
-                    │    VS Code Extension     │  (Thin Adapter)
-                    │  Diagnostics / QuickFix  │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────▼─────────────┐
-                    │       Rule Engine        │  (RuleRegistry & Coordinator)
-                    │    Clusters & Filters    │
-                    └──────┬───────┬───────┬───┘
-                           │       │       │
-       ┌───────────────────┘       │       └───────────────────┐
-       ▼                           ▼                           ▼
-┌──────────────┐          ┌─────────────────┐         ┌─────────────────┐
-│ AST Parser   │          │ Configuration   │         │ Core & Context  │
-│ (TS Compiler │          │ & Suppressions  │         │ Baseline, Types │
-│  + AST Cache)│          │ Manager         │         │ & Performance   │
-└──────────────┘          └─────────────────┘         └─────────────────┘
+Developer / AI changes code
+        ↓
+Anti-Slop watches the change (DocumentWatcher, debounced)
+        ↓
+Analyzes changed code + computes structural fingerprints
+        ↓
+Displays inline suggestions & diagnostics (CodeLens, Hover, Problems)
+        ↓
+Synchronizes Master Audit Checklist (.antislop/checklist.md & audit.json)
+        ↓
+Developer fixes the issue
+        ↓
+Anti-Slop re-checks automatically & flips checklist item to [x] PASSED
+```
+
+```
+                 Anti-Slop Core Engine
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+    Inline              Change              Master
+ Suggestions            Review             Checklist
+(CodeLens/Hover)    (Recent Diff)     (.antislop/checklist.md)
+       │                   │                   │
+       └───────────────────┼───────────────────┘
+                           │
+                     Manual Audit
+          Easy → Moderate → Hard → Strict
 ```
 
 ---
 
 ## Monorepo Layout
-
-The repository is organized as an npm workspace monorepo:
 
 ```
 anti-slop/
@@ -40,18 +53,22 @@ anti-slop/
 │       │   ├── extension.ts      # Activation / lifecycle
 │       │   ├── diagnostics/      # DiagnosticCollectionAdapter (Finding -> vscode.Diagnostic)
 │       │   ├── code-actions/     # Quick Fixes (Safe & Assisted) + inline suppressions
-│       │   ├── watcher/          # Incremental debounced document watcher
+│       │   ├── hover/            # HoverProvider (rationale, evidence, recommendation)
+│       │   ├── codelens/         # CodeLensProvider (quiet inline fix & explain actions)
+│       │   ├── status/           # AntiSlopStatusBar (real-time health score)
+│       │   ├── watcher/          # Incremental debounced continuous audit watcher
 │       │   ├── configuration/    # VS Code settings synchronization
-│       │   └── commands/         # Palette commands (scan file, scan workspace, report)
+│       │   └── commands/         # Palette commands (run audit, open checklist, report)
 │       └── package.json
 │
 ├── packages/
-│   ├── core/                     # Core domain contracts and primitives
+│   ├── core/                     # Core domain contracts, models & storage
 │   │   ├── src/
-│   │   │   ├── types/            # Finding, Rule, Severity, Evidence, FixDescriptor, Location
+│   │   │   ├── types/            # Finding, Rule, Severity, AuditLevel, Checklist, History
 │   │   │   ├── scoring/          # Aggregate confidence scoring
 │   │   │   ├── evidence/         # AST/Type/Heuristic evidence factories
 │   │   │   ├── context/          # ProjectContext & ProjectBaseline detectors
+│   │   │   ├── checklist/        # Checklist generator, markdown formatter & storage
 │   │   │   └── analyzer/         # PerformanceTracker & metric recording
 │   │   └── package.json
 │   │
@@ -70,7 +87,7 @@ anti-slop/
 │   └── rule-engine/              # Rule coordinator & implementations
 │       ├── src/
 │       │   ├── registry/         # RuleRegistry
-│       │   ├── engine/           # RuleEngine (orchestrator)
+│       │   ├── engine/           # RuleEngine (orchestrator with audit level filters)
 │       │   ├── rules/            # Built-in high-confidence rules
 │       │   └── clusters/         # Multi-signal composite clusters (e.g. AS-001)
 │       └── package.json
@@ -78,27 +95,32 @@ anti-slop/
 ├── tests/
 │   ├── fixtures/                 # Fixtures (should-flag, should-not-flag, edge-case, false-positive)
 │   ├── rules/                    # Rule unit tests
-│   └── integration/              # Engine, suppressions, and end-to-end integration tests
+│   └── integration/              # Engine, suppressions, checklist, and audit level tests
 │
 └── docs/                         # Architecture, authoring, and rule specifications
 ```
 
 ---
 
-## Core Principles & Design Invariants
+## Persistent Project Storage (`.antislop/`)
 
-1. **Decoupled Engine**: The core analyzer and rule engine have **zero dependencies on the VS Code API**. The entire engine can run in Node, CLI, CI/CD, or web workers.
-2. **AST-Based Analysis**: Avoid fragile regular expressions. All syntactic and structural inspections use TypeScript AST nodes with accurate source spans.
-3. **Evidence-Driven Diagnostics**: Every diagnostic provides:
-   - What was found
-   - Where it was found (exact source span)
-   - Why it matters
-   - Confidence score ($0.0 - 1.0$)
-   - Recommended remedy
-   - Safe/Assisted Quick Fix
-4. **Performance by Default**:
-   - Fast path: incremental debounced scan on document edits.
-   - AST cache with content hashing to avoid redundant parsing.
-   - Sub-millisecond rule execution.
-   - Built-in `PerformanceTracker` recording parse times, rule times, and cache hit ratios.
-5. **False Positive Mitigation**: Rules explicitly account for intentional developer escapes, external library interop, and valid patterns before emitting findings.
+The audit state persists across developer sessions:
+
+```
+.antislop/
+├── checklist.md        # Human-readable living checklist document
+├── audit.json          # Machine-readable current audit state and item statuses
+├── history.json        # Historical audit log tracking quality trends over time
+└── change-review.md    # Summary of newly introduced vs resolved findings
+```
+
+---
+
+## The Four Manual Audit Levels
+
+| Level | Sensitivity | Focus | Target Use Case |
+|---|---|---|---|
+| **Easy** | High confidence only | Critical runtime crashes, exposed credentials, broken a11y, dead code | Quick sanity check with near-zero false positive tolerance |
+| **Moderate** | Balanced review (Default) | Code duplication, patchwork, unnecessary dependencies, state complexity, UX flaws | Day-to-day pair programming and active development |
+| **Hard** | Deep analysis | Weaker architectural smells, visual genericity, template patterns, intent debt | Milestone reviews and PR reviews |
+| **Strict** | Production-grade review | Exhaustive inspection of state machines, edge cases, contracts, design tokens | Senior engineering sign-off before shipping to production |

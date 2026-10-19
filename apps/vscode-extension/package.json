@@ -1,7 +1,7 @@
 {
   "name": "anti-slop-vscode",
   "displayName": "Anti-Slop",
-  "description": "High-precision, context-aware code quality linter detecting fragile patterns, AI patchwork, and UX flaws",
+  "description": "Continuous code quality reviewer detecting fragile patterns, AI patchwork, and UX flaws",
   "version": "0.1.0",
   "publisher": "anti-slop",
   "license": "MIT",
@@ -21,6 +21,16 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "antiSlop.runAudit",
+        "title": "Anti-Slop: Run Audit (Choose Intensity Level)",
+        "category": "Anti-Slop"
+      },
+      {
+        "command": "antiSlop.openMasterChecklist",
+        "title": "Anti-Slop: Open Master Audit Checklist",
+        "category": "Anti-Slop"
+      },
       {
         "command": "antiSlop.scanCurrentFile",
         "title": "Anti-Slop: Scan Current File",
@@ -71,6 +81,32 @@
           ],
           "default": "warning",
           "description": "Minimum severity threshold for displayed diagnostics."
+        },
+        "antiSlop.auditLevel": {
+          "type": "string",
+          "enum": [
+            "easy",
+            "moderate",
+            "hard",
+            "strict"
+          ],
+          "default": "moderate",
+          "description": "Audit sensitivity level: easy, moderate (recommended), hard, strict."
+        },
+        "antiSlop.autoAudit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Continuously update Master Audit Checklist as code is changed."
+        },
+        "antiSlop.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Display quiet inline CodeLens hints above findings."
+        },
+        "antiSlop.persistAudit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Persist Master Audit Checklist to .antislop/checklist.md across sessions."
         },
         "antiSlop.scanOnSave": {
           "type": "boolean",

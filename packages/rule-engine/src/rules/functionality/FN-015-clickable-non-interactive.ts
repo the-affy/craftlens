@@ -21,6 +21,7 @@ export const FN_015_RULE: AntiSlopRule = {
   fix: 'assisted',
   platforms: ['react', 'web'],
   tags: ['accessibility', 'ux', 'interactive', 'a11y', 'ai-patchwork'],
+  minimumAuditLevel: 'easy',
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {

@@ -1,15 +1,17 @@
-# Anti-Slop — AI Code Quality Linter
+# Anti-Slop — AI Code Quality Linter & Continuous Reviewer
 
-**Anti-Slop** is an opinionated, context-aware code quality linter for modern software and frontend engineering. It detects fragile implementations, AI patchwork, accessibility issues, empty functionality, and generic template patterns commonly introduced by AI coding agents.
+**Anti-Slop** is an opinionated, context-aware continuous code quality reviewer for modern software engineering. It detects fragile implementations, AI patchwork, accessibility issues, empty functionality, and generic template patterns commonly introduced by AI coding agents.
+
+Rather than waiting for manual scans or only populating the Problems panel, Anti-Slop acts as a **continuous software-quality reviewer** looking over the shoulder of your AI coding assistant.
 
 ---
 
 ## What Anti-Slop Is & Is Not
 
 ### What it is
-- A **quality, robustness, and architecture linter** that detects concrete engineering anti-patterns.
-- An AST-powered analyzer that provides evidence-backed explanations and safe Quick Fixes.
-- A context-aware system that respects project baselines, naming conventions, and design tokens.
+- A **continuous quality, robustness, and architecture reviewer** that detects concrete engineering anti-patterns as code changes.
+- An AST-powered analyzer that maintains a persistent **Master Audit Checklist** (`.antislop/checklist.md`).
+- A context-aware system that provides quiet **inline CodeLens**, **Hover explanations**, and **safe Quick Fixes**.
 
 ### What it is NOT
 - **It is NOT an AI detector.** It never attempts to determine whether code was authored by a human or an AI.
@@ -18,29 +20,69 @@
 
 ---
 
-## Key Features
+## The Continuous Review Workflow
 
-1. **Native VS Code Diagnostics**: Underlines real problems directly in the editor with configurable severity thresholds (`blocker`, `error`, `warning`, `suggestion`, `info`).
-2. **Safe Quick Fixes**: Deterministic, 1-click code transformations (e.g. replacing `: any` with `: unknown`, inserting error logging in swallowed catches).
-3. **Evidence-Backed Findings**: Every diagnostic answers:
-   - *What was found?*
-   - *Where was it found?*
-   - *Why does it matter?*
-   - *How confident is the rule?*
-   - *What should be changed?*
-4. **Performance Instrumentation**: Sub-millisecond incremental scanning with AST caching and debounced fast-path analysis.
-5. **Noise Reduction via Clusters**: Weak signals are grouped into multi-signal composites (e.g. `AS-001 Generic AI SaaS Pattern`) rather than generating dozens of noisy individual warnings.
+```
+Developer / AI changes code
+        ↓
+Anti-Slop watches the change (DocumentWatcher, debounced)
+        ↓
+"Reviewing changes..."
+        ↓
+Inline CodeLens and Hover suggestions appear beside affected code
+        ↓
+Master Audit Checklist (.antislop/checklist.md) automatically updates
+        ↓
+Developer fixes the issue
+        ↓
+Anti-Slop re-checks automatically & flips checklist item to [x] PASSED
+```
 
 ---
 
-## Implemented High-Confidence Rules (Phase 1)
+## Key Features
 
-| Rule ID | Title | Category | Severity | Quick Fix |
-|---|---|---|---|---|
-| `AP-008` | Silent Exception Swallowing | Patchwork | Warning | Safe (Log / Propagate) |
-| `AP-014` | Unsafe Any Escape Hatch | Patchwork | Warning | Safe (Replace with `unknown`) |
-| `FN-015` | Clickable Non-Interactive Element | Functionality | Warning | Assisted (`role="button" tabIndex={0}`) |
-| `AS-001` | Generic AI SaaS Pattern (POC Cluster) | Cluster | Suggestion | Refactor template composition |
+1. **Continuous Auto Audit (Default)**: Automatically runs incremental checks whenever code changes, tracking newly introduced issues vs resolved issues.
+2. **Persistent Master Audit Checklist (`.antislop/checklist.md`)**: A living, human-readable markdown document in your repository that infers what features actually exist in your project and tracks requirements:
+   - `[x] PASSED`
+   - `[ ] WARNING`
+   - `[ ] FAILED`
+   - `[-] NOT APPLICABLE`
+3. **Four Manual Audit Levels**:
+   - 🟢 **Easy**: High-confidence critical bugs, security vulnerabilities, and raw crashes.
+   - 🟡 **Moderate (Default)**: Balanced code, UX, architecture, and patchwork review.
+   - 🟠 **Hard**: Deeper architectural smells, visual genericity, and intent debt.
+   - 🔴 **Strict**: Rigorous production / senior engineering review.
+4. **Inline CodeLens & Rich Hover**: Displays clean, non-intrusive action buttons directly in the editor (`Fix`, `Explain`, `Ignore`).
+5. **Change Review Summaries**: Generates a concise quality diff summarizing lines changed, newly introduced findings, and pillar scores (Code, Architecture, UX, A11y, Security, AI-Slop).
+
+---
+
+## Active Rules
+
+| Rule ID | Title | Category | Severity | Min Audit Level | Quick Fix |
+|---|---|---|---|---|---|
+| `AP-008` | Silent Exception Swallowing | Patchwork | Warning | Easy | Safe (Log / Propagate) |
+| `AP-014` | Unsafe Any Escape Hatch | Patchwork | Warning | Moderate | Safe (Replace with `unknown`) |
+| `FN-015` | Clickable Non-Interactive Element | Functionality | Warning | Easy | Assisted (`role="button" tabIndex={0}`) |
+| `AX-016` | Icon Button Without Accessible Name | Accessibility | Error | Easy | Assisted (`aria-label="Action"`) |
+| `PH-011` | Lorem Ipsum Placeholder in UI | Placeholder | Warning | Easy | Assisted (Product Copy) |
+| `CSS-005`| Magic Z-Index Escalation | CSS | Warning | Moderate | Assisted (Layer Scale) |
+| `AS-001` | Generic AI SaaS Pattern | Cluster | Suggestion | Hard | Multi-signal Refactor |
+
+---
+
+## Persistent Project State (`.antislop/`)
+
+Anti-Slop automatically creates and maintains a local `.antislop/` directory:
+
+```
+.antislop/
+├── checklist.md        # Living checklist markdown document
+├── audit.json          # Machine-readable current audit state
+├── history.json        # Historical audit records tracking quality trends
+└── change-review.md    # Summary of most recent code change impact
+```
 
 ---
 
@@ -73,14 +115,16 @@ npm run --workspace=apps/vscode-extension build
 
 ## Configuration
 
-Anti-Slop is configured via standard VS Code settings or `.vscode/settings.json`:
+Configure Anti-Slop in `.vscode/settings.json`:
 
 ```json
 {
   "antiSlop.enabled": true,
+  "antiSlop.autoAudit": true,
+  "antiSlop.auditLevel": "moderate",
+  "antiSlop.enableCodeLens": true,
+  "antiSlop.persistAudit": true,
   "antiSlop.severity": "warning",
-  "antiSlop.scanOnSave": true,
-  "antiSlop.scanOnChange": true,
   "antiSlop.maxDiagnosticsPerFile": 50,
   "antiSlop.rules": {
     "AP-008": {
@@ -96,8 +140,6 @@ Anti-Slop is configured via standard VS Code settings or `.vscode/settings.json`
 ```
 
 ### Inline Suppressions
-
-Suppress rules with familiar comments:
 
 ```typescript
 // Suppress next line for a specific rule
@@ -115,32 +157,13 @@ try { cleanup(); } catch {} // anti-slop-disable-line AP-008
 
 ## Commands
 
-Access these commands from the VS Code Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
+Access these from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 
+- **Anti-Slop: Run Audit (Choose Intensity Level)** — Choose between Easy, Moderate, Hard, or Strict, and select scope (Workspace or Current File).
+- **Anti-Slop: Open Master Audit Checklist** — Opens `.antislop/checklist.md` side-by-side.
 - **Anti-Slop: Scan Current File** — Run an immediate on-demand analysis of the active document.
 - **Anti-Slop: Scan Workspace** — Scan all project source files with progress reporting.
 - **Anti-Slop: Show Report** — Display an interactive HTML report of findings and performance metrics.
 - **Anti-Slop: Explain Finding** — Show deep contextual evidence and recommendations.
 - **Anti-Slop: Ignore Rule** — Disable a rule in workspace settings from a quick pick list.
 - **Anti-Slop: Reset Suppressions** — Reset all workspace suppressions.
-
----
-
-## Architecture
-
-Anti-Slop decouples the VS Code presentation layer from the core rule engine:
-
-```
-anti-slop/
-├── apps/
-│   └── vscode-extension/    # Thin VS Code adapter
-├── packages/
-│   ├── core/                # Types, findings, scoring, baseline
-│   ├── parser/              # TypeScript Compiler AST parser + AST cache
-│   ├── config/              # Configuration & comment suppression manager
-│   └── rule-engine/         # RuleRegistry, engine, rules & clusters
-├── tests/                   # Fixtures & automated test suites
-└── docs/                    # Architecture & rule authoring specifications
-```
-
-See [docs/architecture.md](file:///docs/architecture.md) and [docs/rule-authoring.md](file:///docs/rule-authoring.md) for comprehensive guides.

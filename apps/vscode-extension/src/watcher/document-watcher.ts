@@ -1,13 +1,24 @@
 import * as vscode from 'vscode';
 import { RuleEngine } from '@anti-slop/rule-engine';
-import { ProjectContext } from '@anti-slop/core';
+import {
+  AuditStorageManager,
+  Finding,
+  ProjectContext,
+  generateChangeReview,
+  formatChangeReviewMarkdown,
+} from '@anti-slop/core';
 import { DiagnosticsCollectionAdapter } from '../diagnostics/collection-adapter.js';
 import { ConfigurationManager } from '../configuration/config-manager.js';
+import { AntiSlopStatusBar } from '../status/status-bar.js';
+import { AntiSlopCodeLensProvider } from '../codelens/codelens-provider.js';
 
 export interface DocumentWatcherOptions {
   engine: RuleEngine;
   diagnosticsAdapter: DiagnosticsCollectionAdapter;
   configManager: ConfigurationManager;
+  statusBar: AntiSlopStatusBar;
+  codeLensProvider: AntiSlopCodeLensProvider;
+  storageManager: AuditStorageManager;
   projectContext?: ProjectContext;
   debounceMs?: number;
 }
@@ -16,6 +27,9 @@ export class DocumentWatcher {
   private engine: RuleEngine;
   private diagnosticsAdapter: DiagnosticsCollectionAdapter;
   private configManager: ConfigurationManager;
+  private statusBar: AntiSlopStatusBar;
+  private codeLensProvider: AntiSlopCodeLensProvider;
+  private storageManager: AuditStorageManager;
   private projectContext?: ProjectContext;
   private debounceMs: number;
   private debounceTimers = new Map<string, NodeJS.Timeout>();
@@ -25,6 +39,9 @@ export class DocumentWatcher {
     this.engine = options.engine;
     this.diagnosticsAdapter = options.diagnosticsAdapter;
     this.configManager = options.configManager;
+    this.statusBar = options.statusBar;
+    this.codeLensProvider = options.codeLensProvider;
+    this.storageManager = options.storageManager;
     this.projectContext = options.projectContext;
     this.debounceMs = options.debounceMs ?? 300;
 
@@ -56,6 +73,7 @@ export class DocumentWatcher {
         if (!config.enabled || !config.scanOnChange) return;
         if (!this.isSupportedDocument(event.document)) return;
 
+        this.statusBar.updateReviewing();
         this.scheduleScan(event.document);
       })
     );
@@ -87,6 +105,7 @@ export class DocumentWatcher {
       vscode.workspace.onDidCloseTextDocument(doc => {
         this.diagnosticsAdapter.clear(doc.uri);
         this.engine.getAstCache().invalidate(doc.uri.fsPath);
+        this.codeLensProvider.refresh();
       })
     );
   }
@@ -110,6 +129,8 @@ export class DocumentWatcher {
     if (!this.isSupportedDocument(doc)) return;
 
     const config = this.configManager.getConfig();
+    const prevFindings = this.diagnosticsAdapter.getFindingsForFile(doc.uri.fsPath);
+
     const result = this.engine.analyze({
       filePath: doc.uri.fsPath,
       sourceText: doc.getText(),
@@ -118,7 +139,44 @@ export class DocumentWatcher {
       projectContext: this.projectContext,
     });
 
+    // Update Diagnostics Collection
     this.diagnosticsAdapter.update(doc.uri, result.findings);
+
+    // Trigger CodeLens update
+    this.codeLensProvider.refresh();
+
+    // Check for newly introduced findings vs resolved findings
+    if (prevFindings.length > 0 || result.findings.length > 0) {
+      const changeReview = generateChangeReview(
+        [vscode.workspace.asRelativePath(doc.uri)],
+        prevFindings,
+        result.findings
+      );
+
+      // Save recent change review if new issues were introduced
+      if (changeReview.newFindings.length > 0) {
+        const reviewMd = formatChangeReviewMarkdown(changeReview);
+        this.storageManager.saveChangeReview(reviewMd);
+      }
+    }
+
+    // Continuous Master Audit Checklist Synchronization
+    if (config.persistAudit && this.projectContext) {
+      const allFindings: Finding[] = [];
+      for (const list of this.diagnosticsAdapter.getAllFindings().values()) {
+        allFindings.push(...list);
+      }
+
+      const { checklist } = this.storageManager.syncAudit(
+        this.projectContext,
+        allFindings,
+        config.auditLevel
+      );
+
+      this.statusBar.updateFromChecklist(checklist);
+    } else {
+      this.statusBar.updateIdle();
+    }
   }
 
   public dispose(): void {
