@@ -2,15 +2,15 @@
 ────────────────────────────────────
 **Project:** antislop
 **Last Audit:** 2026-10-25 | **Level:** `MODERATE`
-**Health:** 49 / 100 (Critical)
+**Health:** 63 / 100 (Needs Attention)
 
 ## Checklist Status
-15 / 19 checks passed
+16 / 19 checks passed
 
 ## Findings
-24 issues found
+16 issues found
 • 0 error(s)
-• 24 warning(s)
+• 16 warning(s)
 • 0 suggestion(s)
 
 ────────────────────────────────────
@@ -19,17 +19,13 @@
   > Failures are handled, reported, or propagated instead of disappearing silently.
   *3 issue(s) detected across Error handling*
 
-- [ ] **TypeScript type safety** `WARNING` (4 locations)
+- [ ] **TypeScript type safety** `WARNING` (6 locations)
   > Strict type discipline without using any as a compiler escape hatch.
-  *4 issue(s) detected across Type assertions, TypeScript type safety*
+  *6 issue(s) detected across TypeScript type safety*
 
-- [ ] **Structured z-index layering** `WARNING` (4 locations)
-  > Avoids magic escalation values (e.g. z-[999999]) to patch stacking contexts.
-  *4 issue(s) detected across Layer stacking & z-index*
-
-- [ ] **Responsive layout is handled** `WARNING` (3 locations)
+- [ ] **Responsive layout is handled** `WARNING` (1 location)
   > Responsive layout adapts across viewport sizes without horizontal clipping or broken grids.
-  *3 issue(s) detected across Multi-column grid crushes cards on mobile viewports*
+  *1 issue(s) detected across Multi-column grid crushes cards on mobile viewports*
 
 ## Passed Checks
 - [x] **Dependencies & hygiene** `PASSED`
@@ -41,6 +37,7 @@
 - [x] **Accessible color contrast** `PASSED`
 - [x] **Buttons have clear affordances** `PASSED`
 - [x] **Absence of placeholder content** `PASSED`
+- [x] **Structured z-index layering** `PASSED`
 - [x] **Layout works without fragile CSS hacks** `PASSED`
 - [x] **Clear CTA hierarchy** `PASSED`
 - [x] **Avoid excessive rounded cards** `PASSED`

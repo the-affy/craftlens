@@ -1,16 +1,16 @@
 {
   "projectName": "antislop",
-  "lastAudit": 1792934000926,
+  "lastAudit": 1792935507121,
   "auditLevel": "moderate",
   "summary": {
     "errors": 0,
-    "warnings": 24,
+    "warnings": 16,
     "suggestions": 0,
-    "passed": 15,
+    "passed": 16,
     "total": 19,
-    "healthScore": 49,
-    "healthGrade": "Critical",
-    "healthExplanation": "Health: 49 / 100 (Critical)\nBased on:\n• 15 / 19 checks passed (79 base pts)\n• 0 errors (-0 pts)\n• 24 warnings (-30 pts)\n• 0 suggestions (-0 pts)"
+    "healthScore": 63,
+    "healthGrade": "Needs Attention",
+    "healthExplanation": "Health: 63 / 100 (Needs Attention)\nBased on:\n• 16 / 19 checks passed (84 base pts)\n• 0 errors (-0 pts)\n• 16 warnings (-21 pts)\n• 0 suggestions (-0 pts)"
   },
   "items": [
     {
@@ -31,7 +31,7 @@
         "CD-050"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "cq-exceptions",
@@ -50,7 +50,7 @@
         "AP-008"
       ],
       "findingCount": 3,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "cq-types",
@@ -59,7 +59,7 @@
       "description": "Strict type discipline without using any as a compiler escape hatch.",
       "status": "warning",
       "statusLabel": "Warning",
-      "evidence": "4 issue(s) detected across Type assertions, TypeScript type safety",
+      "evidence": "6 issue(s) detected across TypeScript type safety",
       "checked": false,
       "manualOverride": false,
       "relatedRules": [
@@ -70,8 +70,8 @@
         "AP-014",
         "CD-001"
       ],
-      "findingCount": 4,
-      "lastChecked": 1792934000926
+      "findingCount": 6,
+      "lastChecked": 1792935507121
     },
     {
       "id": "cq-component-size",
@@ -91,7 +91,7 @@
         "CD-023",
         "CD-024"
       ],
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "arch-imports",
@@ -111,7 +111,7 @@
         "CD-050"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "arch-design-tokens",
@@ -137,7 +137,7 @@
         "UI-SPACING-01"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "state-effects",
@@ -167,7 +167,7 @@
         "ST-002",
         "ST-003"
       ],
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "state-machines",
@@ -187,7 +187,7 @@
         "CD-032",
         "CD-033"
       ],
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "a11y-interactive-semantics",
@@ -209,7 +209,7 @@
         "IX-002"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "a11y-keyboard-nav",
@@ -229,7 +229,7 @@
         "AX-024"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "a11y-accessible-names",
@@ -249,7 +249,7 @@
         "AX-016"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "a11y-contrast",
@@ -269,7 +269,7 @@
         "AX-016"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "ux-meaningful-actions",
@@ -291,7 +291,7 @@
         "IX-006"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "ux-no-placeholders",
@@ -317,17 +317,16 @@
         "CP-006"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "css-zindex",
       "category": "Styling & Layout Resilience",
       "title": "Structured z-index layering",
       "description": "Avoids magic escalation values (e.g. z-[999999]) to patch stacking contexts.",
-      "status": "warning",
-      "statusLabel": "Warning",
-      "evidence": "4 issue(s) detected across Layer stacking & z-index",
-      "checked": false,
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
       "manualOverride": false,
       "relatedRules": [
         "CSS-005"
@@ -335,8 +334,8 @@
       "relatedRuleIds": [
         "CSS-005"
       ],
-      "findingCount": 4,
-      "lastChecked": 1792934000926
+      "findingCount": 0,
+      "lastChecked": 1792935507121
     },
     {
       "id": "css-layout-patches",
@@ -358,7 +357,7 @@
         "AP-020"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "layout-responsive",
@@ -367,7 +366,7 @@
       "description": "Responsive layout adapts across viewport sizes without horizontal clipping or broken grids.",
       "status": "warning",
       "statusLabel": "Warning",
-      "evidence": "3 issue(s) detected across Multi-column grid crushes cards on mobile viewports",
+      "evidence": "1 issue(s) detected across Multi-column grid crushes cards on mobile viewports",
       "checked": false,
       "manualOverride": false,
       "relatedRules": [
@@ -380,8 +379,8 @@
         "LY-002",
         "UI-022"
       ],
-      "findingCount": 3,
-      "lastChecked": 1792934000926
+      "findingCount": 1,
+      "lastChecked": 1792935507121
     },
     {
       "id": "hier-cta",
@@ -403,7 +402,7 @@
         "CP-002"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "hier-cards",
@@ -429,7 +428,7 @@
         "CL-003"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "hier-purpose",
@@ -451,7 +450,7 @@
         "VH-008"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "conv-components",
@@ -469,7 +468,7 @@
         "CX-013"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "conv-tokens",
@@ -489,7 +488,7 @@
         "CX-005"
       ],
       "findingCount": 0,
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     },
     {
       "id": "slop-template-cluster",
@@ -513,7 +512,7 @@
         "UI-019",
         "UI-020"
       ],
-      "lastChecked": 1792934000926
+      "lastChecked": 1792935507121
     }
   ]
 }

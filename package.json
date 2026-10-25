@@ -1,8 +1,8 @@
 {
   "name": "craftlens-monorepo",
-  "version": "0.1.16",
+  "version": "0.2.0-next.1",
   "private": true,
-  "description": "CraftLens: High-precision, context-aware quality linter for modern software",
+  "description": "CraftLens Next: High-precision, context-aware quality linter for modern software",
   "type": "module",
   "workspaces": [
     "packages/*",

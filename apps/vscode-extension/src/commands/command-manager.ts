@@ -42,6 +42,7 @@ import { CraftLensDetailViewProvider } from '../sidebar/detail-panel-provider.js
 import { CraftLensInlineDecorationManager } from '../decorations/inline-decorations.js';
 import { UIAnalyzer, RecommendationPipeline, DesignRecommendation } from '@craftlens/design-intelligence';
 import { RecommendationApplier } from '../recommendations/recommendation-applier.js';
+import { ProjectOverviewPanel } from '../overview/project-overview-panel.js';
 
 export type AuditMode =
   | 'ui_ux'
@@ -87,7 +88,8 @@ export class CommandManager {
     private projectContext: ProjectContext,
     private sidebarProvider?: CraftLensSidebarProvider,
     private detailPanelProvider?: CraftLensDetailViewProvider,
-    private inlineDecorationManager?: CraftLensInlineDecorationManager
+    private inlineDecorationManager?: CraftLensInlineDecorationManager,
+    private extensionUri?: vscode.Uri
   ) {
     this.disposables.push(
       vscode.workspace.registerTextDocumentContentProvider('craftlens-preview', this.previewProvider)
@@ -581,6 +583,28 @@ export class CommandManager {
 
         if (!modePick) return;
         await this.runAuditWithMode(modePick.mode);
+      })
+    );
+
+    // 1b. Project Overview in Editor Tab
+    this.disposables.push(
+      this.registerCmd('craftlens.openProjectOverview', async () => {
+        const extUri = this.extensionUri || vscode.Uri.file('/');
+        ProjectOverviewPanel.createOrShow(
+          extUri,
+          this.diagnosticsAdapter.getFindingStore(),
+          this.storageManager,
+          this.configManager,
+          this.engine,
+          this.projectContext,
+          () => {
+            vscode.commands.executeCommand('craftlens.scanWorkspace');
+          },
+          async (findingId: string) => {
+            await vscode.commands.executeCommand('craftlens.applyQuickFix', { id: findingId });
+            return true;
+          }
+        );
       })
     );
 

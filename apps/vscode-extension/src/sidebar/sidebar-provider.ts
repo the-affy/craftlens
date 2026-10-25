@@ -247,6 +247,9 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
               this.updateHtml();
             }
             break;
+          case 'openProjectOverview':
+            await vscode.commands.executeCommand('craftlens.openProjectOverview');
+            break;
 
         case 'setRuleSource':
           if (message.mode) {
@@ -744,6 +747,62 @@ private updateHtml(): void {
       font-weight: 500;
       color: var(--muted);
       margin-left: 6px;
+    }
+
+    /* Live Dashboard (3 Compact Cards) */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      margin: 8px 0 8px;
+    }
+    .dashboard-card {
+      background: var(--surface-raised, #202024);
+      border: 1px solid var(--border-subtle, #27272a);
+      border-radius: var(--radius-sm, 2px);
+      padding: 6px 4px 5px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .dashboard-card:hover {
+      background: var(--surface-hover, #2a2d2e);
+      border-color: var(--vscode-focusBorder, var(--border));
+    }
+    .dashboard-card-val {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.1;
+      font-family: var(--font-mono);
+      color: var(--header-fg, #ffffff);
+    }
+    .dashboard-card-label {
+      font-size: 9.5px;
+      font-weight: 500;
+      color: var(--muted, #858585);
+      margin-top: 3px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .project-overview-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 7px;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: var(--radius-sm, 2px);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      color: var(--vscode-button-secondaryForeground, var(--fg));
+      border: 1px solid var(--vscode-button-border, var(--border));
+      cursor: pointer;
+    }
+    .project-overview-btn:hover {
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      color: var(--vscode-button-foreground, #ffffff);
     }
 
     /* Rule Sources Selector (Section 5 & 9) */
@@ -1950,12 +2009,29 @@ private updateHtml(): void {
   <!-- Top Workspace Summary -->
   <header class="top-header">
     <div class="brand-row">
-      <span class="brand-title">CraftLens</span>
-      <span class="workspace-name" title="${projectName}">${projectName}</span>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span class="brand-title">CraftLens</span>
+        <span class="workspace-name" title="${projectName}">${projectName}</span>
+      </div>
+      <button class="project-overview-btn" onclick="openProjectOverview()" title="Open Project Overview in Editor Tab">
+        ⊞ Overview
+      </button>
     </div>
-    <div class="headline-stats">
-      <span>${totalIssues} finding${totalIssues === 1 ? '' : 's'} · ${totalInstances} instance${totalInstances === 1 ? '' : 's'}</span>
-      <span class="health-stat">(Score ${auditState.score ?? 100})</span>
+
+    <!-- Live Dashboard (3 Compact Cards) -->
+    <div class="dashboard-grid" role="region" aria-label="Project Status Dashboard">
+      <div class="dashboard-card" onclick="openProjectOverview()" data-card="code-quality" title="Code Quality Score (Click to open Project Overview)">
+        <div class="dashboard-card-val" id="dashboard-code-quality-val">${auditState.score ?? 100}</div>
+        <div class="dashboard-card-label">Code Quality</div>
+      </div>
+      <div class="dashboard-card" onclick="switchTab('audit')" data-card="open-issues" title="Open Issues (Click to view issues)">
+        <div class="dashboard-card-val" id="dashboard-open-issues-val">${totalIssues}</div>
+        <div class="dashboard-card-label">Open Issues</div>
+      </div>
+      <div class="dashboard-card" onclick="switchTab('checklist')" data-card="checklist" title="Checklist Criteria (Click to view checklist)">
+        <div class="dashboard-card-val" id="dashboard-checklist-val">${checklistCriteriaCount}</div>
+        <div class="dashboard-card-label">Checklist</div>
+      </div>
     </div>
 
     <!-- Rule Sources Selector (Section 5, 8, 9) -->
@@ -2035,6 +2111,7 @@ private updateHtml(): void {
       }
 
       window.switchTab = function(tab) { post('switchTab', { tab: tab }); };
+      window.openProjectOverview = function() { post('openProjectOverview'); };
       window.selectRuleSource = function(mode) { post('setRuleSource', { mode: mode }); };
       window.setFilter = function(filter) { post('setFilter', { filter: filter }); };
       window.clearFilter = function() { post('clearFilter'); };

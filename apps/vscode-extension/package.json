@@ -1,8 +1,8 @@
 {
   "name": "craftlens",
-  "displayName": "CraftLens",
+  "displayName": "CraftLens Next",
   "description": "A second pair of eyes for AI-generated software. Find problems, understand why they matter, and improve them.",
-  "version": "0.1.16",
+  "version": "0.2.0-next.1",
   "publisher": "craftlens",
   "license": "MIT",
   "repository": {
@@ -29,6 +29,12 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "craftlens.openProjectOverview",
+        "title": "CraftLens: Open Project Overview",
+        "category": "CraftLens",
+        "icon": "$(layout-dashboard)"
+      },
       {
         "command": "craftlens.debugUiAnalysis",
         "title": "CraftLens: Debug UI Analysis",
@@ -285,6 +291,11 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "craftlens.openProjectOverview",
+          "when": "view == craftlens.sidebar",
+          "group": "navigation@0"
+        },
         {
           "command": "craftlens.runAudit",
           "when": "view == craftlens.sidebar",

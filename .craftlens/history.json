@@ -1,116 +1,6 @@
 [
   {
     "auditNumber": 101,
-    "timestamp": 1792934000182,
-    "level": "moderate",
-    "totalFindings": 56,
-    "errors": 0,
-    "warnings": 56,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 2
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000185,
-    "level": "moderate",
-    "totalFindings": 56,
-    "errors": 0,
-    "warnings": 56,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 0
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000191,
-    "level": "moderate",
-    "totalFindings": 57,
-    "errors": 0,
-    "warnings": 57,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 1
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000194,
-    "level": "moderate",
-    "totalFindings": 57,
-    "errors": 0,
-    "warnings": 57,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 0
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000197,
-    "level": "moderate",
-    "totalFindings": 60,
-    "errors": 0,
-    "warnings": 60,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 3
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000203,
-    "level": "moderate",
-    "totalFindings": 60,
-    "errors": 0,
-    "warnings": 60,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 0
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000208,
-    "level": "moderate",
-    "totalFindings": 62,
-    "errors": 0,
-    "warnings": 62,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 2
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000216,
-    "level": "moderate",
-    "totalFindings": 53,
-    "errors": 0,
-    "warnings": 53,
-    "suggestions": 0,
-    "resolvedSincePrevious": 9,
-    "newFindings": 0
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000223,
-    "level": "moderate",
-    "totalFindings": 53,
-    "errors": 0,
-    "warnings": 53,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 0
-  },
-  {
-    "auditNumber": 101,
-    "timestamp": 1792934000226,
-    "level": "moderate",
-    "totalFindings": 53,
-    "errors": 0,
-    "warnings": 53,
-    "suggestions": 0,
-    "resolvedSincePrevious": 0,
-    "newFindings": 0
-  },
-  {
-    "auditNumber": 101,
     "timestamp": 1792934000229,
     "level": "moderate",
     "totalFindings": 53,
@@ -1098,5 +988,115 @@
     "suggestions": 0,
     "resolvedSincePrevious": 0,
     "newFindings": 0
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792934882404,
+    "level": "moderate",
+    "totalFindings": 10,
+    "errors": 0,
+    "warnings": 10,
+    "suggestions": 0,
+    "resolvedSincePrevious": 14,
+    "newFindings": 0
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792934968855,
+    "level": "moderate",
+    "totalFindings": 15,
+    "errors": 0,
+    "warnings": 15,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 5
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935016987,
+    "level": "moderate",
+    "totalFindings": 20,
+    "errors": 0,
+    "warnings": 20,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 5
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935051724,
+    "level": "moderate",
+    "totalFindings": 22,
+    "errors": 0,
+    "warnings": 22,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 2
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935293741,
+    "level": "moderate",
+    "totalFindings": 11,
+    "errors": 0,
+    "warnings": 11,
+    "suggestions": 0,
+    "resolvedSincePrevious": 11,
+    "newFindings": 0
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935356427,
+    "level": "moderate",
+    "totalFindings": 15,
+    "errors": 0,
+    "warnings": 15,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 4
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935402850,
+    "level": "moderate",
+    "totalFindings": 15,
+    "errors": 0,
+    "warnings": 15,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 0
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935450296,
+    "level": "moderate",
+    "totalFindings": 15,
+    "errors": 0,
+    "warnings": 15,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 0
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935465629,
+    "level": "moderate",
+    "totalFindings": 15,
+    "errors": 0,
+    "warnings": 15,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 0
+  },
+  {
+    "auditNumber": 101,
+    "timestamp": 1792935507123,
+    "level": "moderate",
+    "totalFindings": 16,
+    "errors": 0,
+    "warnings": 16,
+    "suggestions": 0,
+    "resolvedSincePrevious": 0,
+    "newFindings": 1
   }
 ]

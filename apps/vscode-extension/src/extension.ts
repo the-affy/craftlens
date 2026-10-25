@@ -154,7 +154,8 @@ export function activate(context: vscode.ExtensionContext): void {
     projectContext,
     sidebarProvider,
     detailPanelProvider,
-    inlineDecorationManager
+    inlineDecorationManager,
+    context.extensionUri
   );
 
   // 11. Subscribe to configuration updates
