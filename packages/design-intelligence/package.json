@@ -1,0 +1,19 @@
+{
+  "name": "@craftlens/design-intelligence",
+  "version": "0.1.0",
+  "description": "CraftLens Design Intelligence: Visual hierarchy, layout intent, design tokens, and actionable UX recommendations",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@craftlens/core": "*",
+    "@craftlens/parser": "*",
+    "typescript": "^5.6.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

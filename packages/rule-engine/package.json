@@ -1,7 +1,7 @@
 {
-  "name": "@anti-slop/rule-engine",
+  "name": "@craftlens/rule-engine",
   "version": "0.1.0",
-  "description": "Anti-Slop rule engine, registry, rule implementations, and cluster coordinator",
+  "description": "CraftLens rule engine, registry, rule implementations, and cluster coordinator",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -9,11 +9,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@anti-slop/config": "*",
-    "@anti-slop/core": "*",
-    "@anti-slop/parser": "*",
+    "@craftlens/config": "*",
+    "@craftlens/core": "*",
+    "@craftlens/design-intelligence": "*",
+    "@craftlens/parser": "*",
     "typescript": "^5.6.3"
   },
+
   "devDependencies": {
     "typescript": "^5.6.3"
   }

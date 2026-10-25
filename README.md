@@ -1,16 +1,16 @@
-# Anti-Slop — AI Code Quality Linter & Continuous Reviewer
+# CraftLens — AI Code Quality Linter & Continuous Reviewer
 
-**Anti-Slop** is an opinionated, context-aware continuous code quality reviewer for modern software engineering. It detects fragile implementations, AI patchwork, accessibility issues, empty functionality, and generic template patterns commonly introduced by AI coding agents.
+**CraftLens** is an opinionated, context-aware continuous code quality reviewer for modern software engineering. It detects fragile implementations, AI patchwork, accessibility issues, empty functionality, and generic template patterns commonly introduced by AI coding agents.
 
-Rather than waiting for manual scans or only populating the Problems panel, Anti-Slop acts as a **continuous software-quality reviewer** looking over the shoulder of your AI coding assistant.
+Rather than waiting for manual scans or only populating the Problems panel, CraftLens acts as a **continuous software-quality reviewer** looking over the shoulder of your AI coding assistant.
 
 ---
 
-## What Anti-Slop Is & Is Not
+## What CraftLens Is & Is Not
 
 ### What it is
 - A **continuous quality, robustness, and architecture reviewer** that detects concrete engineering anti-patterns as code changes.
-- An AST-powered analyzer that maintains a persistent **Master Audit Checklist** (`.antislop/checklist.md`).
+- An AST-powered analyzer that maintains a persistent **Master Audit Checklist** (`.craftlens/checklist.md`).
 - A context-aware system that provides quiet **inline CodeLens**, **Hover explanations**, and **safe Quick Fixes**.
 
 ### What it is NOT
@@ -25,17 +25,17 @@ Rather than waiting for manual scans or only populating the Problems panel, Anti
 ```
 Developer / AI changes code
         ↓
-Anti-Slop watches the change (DocumentWatcher, debounced)
+CraftLens watches the change (DocumentWatcher, debounced)
         ↓
 "Reviewing changes..."
         ↓
 Inline CodeLens and Hover suggestions appear beside affected code
         ↓
-Master Audit Checklist (.antislop/checklist.md) automatically updates
+Master Audit Checklist (.craftlens/checklist.md) automatically updates
         ↓
 Developer fixes the issue
         ↓
-Anti-Slop re-checks automatically & flips checklist item to [x] PASSED
+CraftLens re-checks automatically & flips checklist item to [x] PASSED
 ```
 
 ---
@@ -43,7 +43,7 @@ Anti-Slop re-checks automatically & flips checklist item to [x] PASSED
 ## Key Features
 
 1. **Continuous Auto Audit (Default)**: Automatically runs incremental checks whenever code changes, tracking newly introduced issues vs resolved issues.
-2. **Persistent Master Audit Checklist (`.antislop/checklist.md`)**: A living, human-readable markdown document in your repository that infers what features actually exist in your project and tracks requirements:
+2. **Persistent Master Audit Checklist (`.craftlens/checklist.md`)**: A living, human-readable markdown document in your repository that infers what features actually exist in your project and tracks requirements:
    - `[x] PASSED`
    - `[ ] WARNING`
    - `[ ] FAILED`
@@ -72,12 +72,12 @@ Anti-Slop re-checks automatically & flips checklist item to [x] PASSED
 
 ---
 
-## Persistent Project State (`.antislop/`)
+## Persistent Project State (`.craftlens/`)
 
-Anti-Slop automatically creates and maintains a local `.antislop/` directory:
+CraftLens automatically creates and maintains a local `.craftlens/` directory:
 
 ```
-.antislop/
+.craftlens/
 ├── checklist.md        # Living checklist markdown document
 ├── audit.json          # Machine-readable current audit state
 ├── history.json        # Historical audit records tracking quality trends
@@ -95,8 +95,8 @@ Anti-Slop automatically creates and maintains a local `.antislop/` directory:
 ### Setup
 ```bash
 # Clone the repository
-git clone https://github.com/javra/antislop.git
-cd antislop
+git clone https://github.com/javra/craftlens.git
+cd craftlens
 
 # Install dependencies across all workspaces
 npm install
@@ -115,18 +115,18 @@ npm run --workspace=apps/vscode-extension build
 
 ## Configuration
 
-Configure Anti-Slop in `.vscode/settings.json`:
+Configure CraftLens in `.vscode/settings.json`:
 
 ```json
 {
-  "antiSlop.enabled": true,
-  "antiSlop.autoAudit": true,
-  "antiSlop.auditLevel": "moderate",
-  "antiSlop.enableCodeLens": true,
-  "antiSlop.persistAudit": true,
-  "antiSlop.severity": "warning",
-  "antiSlop.maxDiagnosticsPerFile": 50,
-  "antiSlop.rules": {
+  "craftlens.enabled": true,
+  "craftlens.autoAudit": true,
+  "craftlens.auditLevel": "moderate",
+  "craftlens.enableCodeLens": true,
+  "craftlens.persistAudit": true,
+  "craftlens.severity": "warning",
+  "craftlens.maxDiagnosticsPerFile": 50,
+  "craftlens.rules": {
     "AP-008": {
       "enabled": true,
       "severity": "warning"
@@ -143,14 +143,14 @@ Configure Anti-Slop in `.vscode/settings.json`:
 
 ```typescript
 // Suppress next line for a specific rule
-// anti-slop-disable-next-line AP-008
+// craftlens-disable-next-line AP-008
 try { riskyOperation(); } catch {}
 
 // Suppress current line
-try { cleanup(); } catch {} // anti-slop-disable-line AP-008
+try { cleanup(); } catch {} // craftlens-disable-line AP-008
 
 // Suppress entire file
-/* anti-slop-disable-file */
+/* craftlens-disable-file */
 ```
 
 ---
@@ -159,11 +159,11 @@ try { cleanup(); } catch {} // anti-slop-disable-line AP-008
 
 Access these from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 
-- **Anti-Slop: Run Audit (Choose Intensity Level)** — Choose between Easy, Moderate, Hard, or Strict, and select scope (Workspace or Current File).
-- **Anti-Slop: Open Master Audit Checklist** — Opens `.antislop/checklist.md` side-by-side.
-- **Anti-Slop: Scan Current File** — Run an immediate on-demand analysis of the active document.
-- **Anti-Slop: Scan Workspace** — Scan all project source files with progress reporting.
-- **Anti-Slop: Show Report** — Display an interactive HTML report of findings and performance metrics.
-- **Anti-Slop: Explain Finding** — Show deep contextual evidence and recommendations.
-- **Anti-Slop: Ignore Rule** — Disable a rule in workspace settings from a quick pick list.
-- **Anti-Slop: Reset Suppressions** — Reset all workspace suppressions.
+- **CraftLens: Run Audit (Choose Intensity Level)** — Choose between Easy, Moderate, Hard, or Strict, and select scope (Workspace or Current File).
+- **CraftLens: Open Master Audit Checklist** — Opens `.craftlens/checklist.md` side-by-side.
+- **CraftLens: Scan Current File** — Run an immediate on-demand analysis of the active document.
+- **CraftLens: Scan Workspace** — Scan all project source files with progress reporting.
+- **CraftLens: Show Report** — Display an interactive HTML report of findings and performance metrics.
+- **CraftLens: Explain Finding** — Show deep contextual evidence and recommendations.
+- **CraftLens: Ignore Rule** — Disable a rule in workspace settings from a quick pick list.
+- **CraftLens: Reset Suppressions** — Reset all workspace suppressions.

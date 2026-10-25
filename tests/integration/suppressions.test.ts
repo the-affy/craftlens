@@ -7,10 +7,10 @@ describe('Integration: Comment-Based Suppressions', () => {
   registerDefaultRules(registry);
   const engine = new RuleEngine(registry);
 
-  it('suppresses finding using anti-slop-disable-next-line', () => {
+  it('suppresses finding using craftlens-disable-next-line', () => {
     const source = `
       export function test() {
-        // anti-slop-disable-next-line AP-008
+        // craftlens-disable-next-line AP-008
         try { doWork(); } catch {}
       }
     `;
@@ -24,10 +24,10 @@ describe('Integration: Comment-Based Suppressions', () => {
     expect(res.findings.length).toBe(0);
   });
 
-  it('suppresses finding using anti-slop-disable-line', () => {
+  it('suppresses finding using craftlens-disable-line', () => {
     const source = `
       export function test() {
-        try { doWork(); } catch {} // anti-slop-disable-line AP-008
+        try { doWork(); } catch {} // craftlens-disable-line AP-008
       }
     `;
 
@@ -40,9 +40,9 @@ describe('Integration: Comment-Based Suppressions', () => {
     expect(res.findings.length).toBe(0);
   });
 
-  it('suppresses entire file using anti-slop-disable-file', () => {
+  it('suppresses entire file using craftlens-disable-file', () => {
     const source = `
-      /* anti-slop-disable-file */
+      /* craftlens-disable-file */
       export function test(a: any) {
         try { doWork(a); } catch {}
       }
@@ -50,6 +50,40 @@ describe('Integration: Comment-Based Suppressions', () => {
 
     const res = engine.analyze({
       filePath: '/virtual/suppress-file.ts',
+      sourceText: source,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(res.findings.length).toBe(0);
+  });
+
+  it('suppresses finding using craftlens-disable-next-line without hyphen and with reason comment', () => {
+    const source = `
+      export function test() {
+        // craftlens-disable-next-line AP-008 -- reason: Intentional empty catch
+        try { doWork(); } catch {}
+      }
+    `;
+
+    const res = engine.analyze({
+      filePath: '/virtual/suppress-craftlens.ts',
+      sourceText: source,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(res.findings.length).toBe(0);
+  });
+
+  it('suppresses finding using craftlens-disable single line comment', () => {
+    const source = `
+      // craftlens-disable AP-008
+      export function test() {
+        try { doWork(); } catch {}
+      }
+    `;
+
+    const res = engine.analyze({
+      filePath: '/virtual/suppress-range.ts',
       sourceText: source,
       config: DEFAULT_CONFIG,
     });

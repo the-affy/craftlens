@@ -1,0 +1,519 @@
+{
+  "projectName": "antislop",
+  "lastAudit": 1792934000926,
+  "auditLevel": "moderate",
+  "summary": {
+    "errors": 0,
+    "warnings": 24,
+    "suggestions": 0,
+    "passed": 15,
+    "total": 19,
+    "healthScore": 49,
+    "healthGrade": "Critical",
+    "healthExplanation": "Health: 49 / 100 (Critical)\nBased on:\n• 15 / 19 checks passed (79 base pts)\n• 0 errors (-0 pts)\n• 24 warnings (-30 pts)\n• 0 suggestions (-0 pts)"
+  },
+  "items": [
+    {
+      "id": "cq-unused-deps",
+      "category": "Code Quality",
+      "title": "Dependencies & hygiene",
+      "description": "Packages are vetted and necessary without unused or heavy bloat.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CD-041",
+        "CD-050"
+      ],
+      "relatedRuleIds": [
+        "CD-041",
+        "CD-050"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "cq-exceptions",
+      "category": "Code Quality",
+      "title": "Errors are handled clearly",
+      "description": "Failures are handled, reported, or propagated instead of disappearing silently.",
+      "status": "warning",
+      "statusLabel": "Warning",
+      "evidence": "3 issue(s) detected across Error handling",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "AP-008"
+      ],
+      "relatedRuleIds": [
+        "AP-008"
+      ],
+      "findingCount": 3,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "cq-types",
+      "category": "Code Quality",
+      "title": "TypeScript type safety",
+      "description": "Strict type discipline without using any as a compiler escape hatch.",
+      "status": "warning",
+      "statusLabel": "Warning",
+      "evidence": "4 issue(s) detected across Type assertions, TypeScript type safety",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "AP-014",
+        "CD-001"
+      ],
+      "relatedRuleIds": [
+        "AP-014",
+        "CD-001"
+      ],
+      "findingCount": 4,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "cq-component-size",
+      "category": "Code Quality",
+      "title": "Component size & modularity",
+      "description": "Components remain cohesive without excessive responsibilities.",
+      "status": "not-applicable",
+      "notApplicableReason": "Not relevant — no component framework configured",
+      "statusLabel": "Not relevant — no component framework configured",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "CD-023",
+        "CD-024"
+      ],
+      "relatedRuleIds": [
+        "CD-023",
+        "CD-024"
+      ],
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "arch-imports",
+      "category": "Architecture & Boundaries",
+      "title": "Clean architecture & import boundaries",
+      "description": "No circular module dependencies or architectural layer bypassing.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CD-049",
+        "CD-050"
+      ],
+      "relatedRuleIds": [
+        "CD-049",
+        "CD-050"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "arch-design-tokens",
+      "category": "Architecture & Boundaries",
+      "title": "Consistent spacing system",
+      "description": "Component styling aligns with defined project spacing, radius, and color tokens.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CSS-018",
+        "CSS-020",
+        "CX-004",
+        "CX-005",
+        "UI-SPACING-01"
+      ],
+      "relatedRuleIds": [
+        "CSS-018",
+        "CSS-020",
+        "CX-004",
+        "CX-005",
+        "UI-SPACING-01"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "state-effects",
+      "category": "State & React Logic",
+      "title": "React state & derived values",
+      "description": "Derived state is computed directly; effects are not chained in cascades.",
+      "status": "not-applicable",
+      "notApplicableReason": "Not relevant — no React state found in this project",
+      "statusLabel": "Not relevant — no React state found in this project",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "CD-028",
+        "CD-031",
+        "AP-012",
+        "RE-001",
+        "ST-001",
+        "ST-002",
+        "ST-003"
+      ],
+      "relatedRuleIds": [
+        "CD-028",
+        "CD-031",
+        "AP-012",
+        "RE-001",
+        "ST-001",
+        "ST-002",
+        "ST-003"
+      ],
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "state-machines",
+      "category": "State & React Logic",
+      "title": "Discrete state modeling",
+      "description": "Avoids multiple conflicting booleans (e.g. isLoading && isError).",
+      "status": "not-applicable",
+      "notApplicableReason": "Not relevant — no framework UI state found",
+      "statusLabel": "Not relevant — no framework UI state found",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "CD-032",
+        "CD-033"
+      ],
+      "relatedRuleIds": [
+        "CD-032",
+        "CD-033"
+      ],
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "a11y-interactive-semantics",
+      "category": "Accessibility (a11y)",
+      "title": "Interactive elements are accessible",
+      "description": "Click listeners are placed on native interactive elements or elements with role=\"button\".",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "FN-015",
+        "AX-023",
+        "IX-002"
+      ],
+      "relatedRuleIds": [
+        "FN-015",
+        "AX-023",
+        "IX-002"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "a11y-keyboard-nav",
+      "category": "Accessibility (a11y)",
+      "title": "Keyboard accessibility",
+      "description": "All clickable elements can be triggered via keyboard (Enter/Space).",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "FN-016",
+        "AX-024"
+      ],
+      "relatedRuleIds": [
+        "FN-016",
+        "AX-024"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "a11y-accessible-names",
+      "category": "Accessibility (a11y)",
+      "title": "Accessible names on controls",
+      "description": "Icon buttons and interactive controls provide aria-label or accessible text.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "AX-012",
+        "AX-016"
+      ],
+      "relatedRuleIds": [
+        "AX-012",
+        "AX-016"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "a11y-contrast",
+      "category": "Accessibility (a11y)",
+      "title": "Accessible color contrast",
+      "description": "Text and interactive elements meet accessible contrast standards.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CL-001",
+        "AX-016"
+      ],
+      "relatedRuleIds": [
+        "CL-001",
+        "AX-016"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "ux-meaningful-actions",
+      "category": "UX & Functional Integrity",
+      "title": "Buttons have clear affordances",
+      "description": "Buttons and controls perform state changes, navigation, or submissions with clear visual affordances.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "FN-012",
+        "ID-004",
+        "IX-006"
+      ],
+      "relatedRuleIds": [
+        "FN-012",
+        "ID-004",
+        "IX-006"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "ux-no-placeholders",
+      "category": "UX & Functional Integrity",
+      "title": "Absence of placeholder content",
+      "description": "User-facing UI is free of Lorem Ipsum, John Doe, and visible TODOs.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "PH-011",
+        "PH-012",
+        "PH-014",
+        "PH-027",
+        "CP-006"
+      ],
+      "relatedRuleIds": [
+        "PH-011",
+        "PH-012",
+        "PH-014",
+        "PH-027",
+        "CP-006"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "css-zindex",
+      "category": "Styling & Layout Resilience",
+      "title": "Structured z-index layering",
+      "description": "Avoids magic escalation values (e.g. z-[999999]) to patch stacking contexts.",
+      "status": "warning",
+      "statusLabel": "Warning",
+      "evidence": "4 issue(s) detected across Layer stacking & z-index",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "CSS-005"
+      ],
+      "relatedRuleIds": [
+        "CSS-005"
+      ],
+      "findingCount": 4,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "css-layout-patches",
+      "category": "Styling & Layout Resilience",
+      "title": "Layout works without fragile CSS hacks",
+      "description": "Layouts rely on flex/grid flow rather than negative margins or !important overrides.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CSS-006",
+        "CSS-009",
+        "AP-020"
+      ],
+      "relatedRuleIds": [
+        "CSS-006",
+        "CSS-009",
+        "AP-020"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "layout-responsive",
+      "category": "Styling & Layout Resilience",
+      "title": "Responsive layout is handled",
+      "description": "Responsive layout adapts across viewport sizes without horizontal clipping or broken grids.",
+      "status": "warning",
+      "statusLabel": "Warning",
+      "evidence": "3 issue(s) detected across Multi-column grid crushes cards on mobile viewports",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "LY-001",
+        "LY-002",
+        "UI-022"
+      ],
+      "relatedRuleIds": [
+        "LY-001",
+        "LY-002",
+        "UI-022"
+      ],
+      "findingCount": 3,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "hier-cta",
+      "category": "Visual & Hierarchy Quality",
+      "title": "Clear CTA hierarchy",
+      "description": "Views establish one unmistakable primary action without competing button weights.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "VH-007",
+        "ID-004",
+        "CP-002"
+      ],
+      "relatedRuleIds": [
+        "VH-007",
+        "ID-004",
+        "CP-002"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "hier-cards",
+      "category": "Visual & Hierarchy Quality",
+      "title": "Avoid excessive rounded cards",
+      "description": "Information hierarchy avoids excessive identical card grids and card-inside-card nesting.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CP-007",
+        "CP-008",
+        "UI-006",
+        "CL-002",
+        "CL-003"
+      ],
+      "relatedRuleIds": [
+        "CP-007",
+        "CP-008",
+        "UI-006",
+        "CL-002",
+        "CL-003"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "hier-purpose",
+      "category": "Visual & Hierarchy Quality",
+      "title": "Clear visual hierarchy",
+      "description": "Operational views establish clear visual hierarchy, purposeful decoration, and avoid visual noise.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "ID-001",
+        "ID-005",
+        "VH-008"
+      ],
+      "relatedRuleIds": [
+        "ID-001",
+        "ID-005",
+        "VH-008"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "conv-components",
+      "category": "Project Consistency & Tokens",
+      "title": "Component reuse",
+      "description": "Standard project components are reused rather than re-implementing ad-hoc elements.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CX-013"
+      ],
+      "relatedRuleIds": [
+        "CX-013"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "conv-tokens",
+      "category": "Project Consistency & Tokens",
+      "title": "Design token scale adherence",
+      "description": "Component dimensions adhere to approved spacing and corner radius scales.",
+      "status": "passed",
+      "statusLabel": "Passed",
+      "checked": true,
+      "manualOverride": false,
+      "relatedRules": [
+        "CX-004",
+        "CX-005"
+      ],
+      "relatedRuleIds": [
+        "CX-004",
+        "CX-005"
+      ],
+      "findingCount": 0,
+      "lastChecked": 1792934000926
+    },
+    {
+      "id": "slop-template-cluster",
+      "category": "AI-Slop & Template Genericity",
+      "title": "Unique domain UI composition",
+      "description": "Page structure avoids generic AI SaaS template boilerplate (hero + dual CTA + 3 feature cards).",
+      "status": "not-applicable",
+      "notApplicableReason": "Not relevant — no component views found",
+      "statusLabel": "Not relevant — no component views found",
+      "checked": false,
+      "manualOverride": false,
+      "relatedRules": [
+        "AS-001",
+        "UI-017",
+        "UI-019",
+        "UI-020"
+      ],
+      "relatedRuleIds": [
+        "AS-001",
+        "UI-017",
+        "UI-019",
+        "UI-020"
+      ],
+      "lastChecked": 1792934000926
+    }
+  ]
+}

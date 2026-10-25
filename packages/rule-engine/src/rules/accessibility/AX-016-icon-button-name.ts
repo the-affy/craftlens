@@ -1,13 +1,13 @@
 import ts from 'typescript';
 import {
-  AntiSlopRule,
+  CraftLensRule,
   Finding,
   AnalysisContext,
   astEvidence,
-} from '@anti-slop/core';
-import { ParsedDocument } from '@anti-slop/parser';
+} from '@craftlens/core';
+import { ParsedDocument } from '@craftlens/parser';
 
-export const AX_016_RULE: AntiSlopRule = {
+export const AX_016_RULE: CraftLensRule = {
   id: 'AX-016',
   category: 'accessibility',
   title: 'Icon Button Without Accessible Name',
@@ -22,6 +22,30 @@ export const AX_016_RULE: AntiSlopRule = {
   platforms: ['react', 'web'],
   tags: ['accessibility', 'wcag', 'a11y', 'screen-reader'],
   minimumAuditLevel: 'easy',
+  problemTitle: 'Accessible button name',
+  whatIsWrong: 'The button has no accessible name.',
+  whyItMatters: 'Screen-reader users may not know what this control does.',
+  howToFix: 'Add an aria-label that describes the action (e.g. aria-label="Open settings").',
+  suggestedSteps: [
+    'Identify the exact action the button performs.',
+    'Add an aria-label with a concise descriptive action name.',
+    'Alternatively, add visually hidden text inside the button.',
+  ],
+  structuredRecommendation: {
+    summary: 'The button has no accessible name.',
+    why: 'Screen-reader users may not know what this control does.',
+    howToFix: 'Add an aria-label that describes the action.',
+    steps: [
+      'Identify the exact action the button performs.',
+      'Add an aria-label with a concise descriptive action name.',
+      'Alternatively, add visually hidden text inside the button.',
+    ],
+    fix: {
+      type: 'assisted',
+      description: 'Add aria-label to button',
+    },
+  },
+  supportedActions: ['fix', 'explain', 'not_a_problem'],
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {

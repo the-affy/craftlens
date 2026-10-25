@@ -1,9 +1,9 @@
-import { AntiSlopRule, DetectionEngine, Platform, RuleCategory } from '@anti-slop/core';
+import { CraftLensRule, DetectionEngine, Platform, RuleCategory } from '@craftlens/core';
 
 export class RuleRegistry {
-  private rules = new Map<string, AntiSlopRule>();
+  private rules = new Map<string, CraftLensRule>();
 
-  public register(rule: AntiSlopRule): void {
+  public register(rule: CraftLensRule): void {
     if (this.rules.has(rule.id)) {
       throw new Error(`Rule with id "${rule.id}" is already registered.`);
     }
@@ -14,23 +14,23 @@ export class RuleRegistry {
     return this.rules.delete(ruleId);
   }
 
-  public getRule(ruleId: string): AntiSlopRule | undefined {
+  public getRule(ruleId: string): CraftLensRule | undefined {
     return this.rules.get(ruleId);
   }
 
-  public getAllRules(): AntiSlopRule[] {
+  public getAllRules(): CraftLensRule[] {
     return Array.from(this.rules.values());
   }
 
-  public getRulesByEngine(engine: DetectionEngine): AntiSlopRule[] {
+  public getRulesByEngine(engine: DetectionEngine): CraftLensRule[] {
     return this.getAllRules().filter(r => r.engine === engine);
   }
 
-  public getRulesByCategory(category: RuleCategory): AntiSlopRule[] {
+  public getRulesByCategory(category: RuleCategory): CraftLensRule[] {
     return this.getAllRules().filter(r => r.category === category);
   }
 
-  public getRulesForPlatform(platform: Platform): AntiSlopRule[] {
+  public getRulesForPlatform(platform: Platform): CraftLensRule[] {
     return this.getAllRules().filter(r => r.platforms.includes(platform));
   }
 

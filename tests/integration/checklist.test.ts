@@ -104,16 +104,16 @@ describe('Master Audit Checklist & Change Review', () => {
 
     const { checklist, historyEntry } = storage.syncAudit(ctx, [], 'moderate');
 
-    expect(fs.existsSync(path.join(testWorkspace, '.antislop/audit.json'))).toBe(true);
-    expect(fs.existsSync(path.join(testWorkspace, '.antislop/checklist.md'))).toBe(true);
-    expect(fs.existsSync(path.join(testWorkspace, '.antislop/history.json'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/audit.json'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/checklist.md'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/history.json'))).toBe(true);
 
     const savedAudit = storage.loadAudit();
     expect(savedAudit?.projectName).toBe(path.basename(testWorkspace));
     expect(historyEntry.auditNumber).toBe(1);
 
-    const md = fs.readFileSync(path.join(testWorkspace, '.antislop/checklist.md'), 'utf-8');
-    expect(md).toContain('# Anti-Slop Master Audit');
+    const md = fs.readFileSync(path.join(testWorkspace, '.craftlens/checklist.md'), 'utf-8');
+    expect(md).toContain('# CraftLens Master Audit');
     expect(md).toContain('PASSED');
   });
 
@@ -155,8 +155,126 @@ describe('Master Audit Checklist & Change Review', () => {
     expect(review.resolvedFindings[0].ruleId).toBe('AP-008');
 
     const formatted = formatChangeReviewMarkdown(review);
-    expect(formatted).toContain('Anti-Slop · Change Review');
+    expect(formatted).toContain('CraftLens · Change Review');
     expect(formatted).toContain('1 issue(s) resolved');
     expect(formatted).toContain('FN-015: New clickable div');
+  });
+
+  describe('Checklist Criterion Data Model & UX Interactions', () => {
+    it('Requirement 1 & 5: uses stable identifiers and derives dynamic count from criteria', () => {
+      const ctx = createDefaultProjectContext('/test-app');
+      const checklist = generateMasterChecklist(ctx, [], 'moderate');
+
+      expect(checklist.items.length).toBeGreaterThan(0);
+      expect(checklist.summary.total).toBe(checklist.items.filter(i => i.status !== 'not-applicable').length);
+
+      for (const item of checklist.items) {
+        expect(typeof item.id).toBe('string');
+        expect(item.id.length).toBeGreaterThan(0);
+        expect(typeof item.title).toBe('string');
+        expect(typeof item.checked).toBe('boolean');
+        expect(Array.isArray(item.relatedRuleIds)).toBe(true);
+      }
+    });
+
+    it('Requirement 2 & 4: supports manual checkbox toggle and persists state across syncs', () => {
+      const storage = new AuditStorageManager(testWorkspace);
+      const ctx = createDefaultProjectContext(testWorkspace);
+
+      // Initial audit
+      const audit = storage.getOrInitAudit(ctx, []);
+      expect(audit.items.length).toBeGreaterThan(0);
+
+      const targetItem = audit.items[0];
+      const initialChecked = targetItem.checked;
+
+      // User manually toggles checkbox
+      const updatedAudit = storage.updateCriterionChecked(targetItem.id, !initialChecked);
+      expect(updatedAudit).not.toBeNull();
+      const updatedItem = updatedAudit!.items.find(i => i.id === targetItem.id);
+      expect(updatedItem?.checked).toBe(!initialChecked);
+      expect(updatedItem?.manualOverride).toBe(true);
+
+      // Re-syncing audit preserves the user's manual override
+      const resynced = storage.syncAudit(ctx, [], 'moderate');
+      const resyncedItem = resynced.checklist.items.find(i => i.id === targetItem.id);
+      expect(resyncedItem?.checked).toBe(!initialChecked);
+      expect(resyncedItem?.manualOverride).toBe(true);
+
+      // User manually unchecks again
+      const uncheckedAudit = storage.updateCriterionChecked(targetItem.id, initialChecked);
+      const uncheckedItem = uncheckedAudit!.items.find(i => i.id === targetItem.id);
+      expect(uncheckedItem?.checked).toBe(initialChecked);
+    });
+
+    it('Requirement 3 & 6: automatically marks criterion checked on successful fix of matching rule', () => {
+      const storage = new AuditStorageManager(testWorkspace);
+      const ctx = createDefaultProjectContext(testWorkspace);
+
+      const dummyLoc = createLocation('/test-app/src/utils.ts', 10, 5, 100, 15, 6, 200);
+      const findingWithRule: Finding = {
+        ruleId: 'UI-SPACING-01',
+        message: 'Inconsistent spacing detected',
+        severity: 'warning',
+        location: dummyLoc,
+        evidence: [],
+      };
+
+      const auditBefore = storage.syncAudit(ctx, [findingWithRule], 'moderate');
+      const spacingCriterion = auditBefore.checklist.items.find(i =>
+        i.relatedRuleIds?.includes('UI-SPACING-01') || i.id === 'arch-design-tokens'
+      );
+      expect(spacingCriterion).toBeDefined();
+
+      // Ensure an unrelated criterion is unchecked
+      storage.updateCriterionChecked('cq-exceptions', false);
+
+      // Successful fix occurs for UI-SPACING-01
+      const modifiedAudit = storage.markCriteriaCheckedForFinding(findingWithRule);
+      expect(modifiedAudit).not.toBeNull();
+
+      const checkedCriterion = modifiedAudit!.items.find(i => i.id === spacingCriterion!.id);
+      expect(checkedCriterion?.checked).toBe(true);
+
+      // Unrelated criterion remains unchecked
+      const unrelatedCriterion = modifiedAudit!.items.find(i => i.id === 'cq-exceptions');
+      expect(unrelatedCriterion?.checked).toBe(false);
+    });
+
+    it('Requirement 3: does NOT check criterion if fix is previewed or rejected', () => {
+      const storage = new AuditStorageManager(testWorkspace);
+      const ctx = createDefaultProjectContext(testWorkspace);
+
+      const dummyLoc = createLocation('/test-app/src/utils.ts', 10, 5, 100, 15, 6, 200);
+      const finding: Finding = {
+        ruleId: 'UI-SPACING-01',
+        message: 'Inconsistent spacing detected',
+        severity: 'warning',
+        location: dummyLoc,
+        evidence: [],
+      };
+
+      storage.syncAudit(ctx, [finding], 'moderate');
+
+      // Mere preview or rejection does NOT invoke markCriteriaCheckedForFinding
+      const currentAudit = storage.loadAudit();
+      const target = currentAudit?.items.find(i => i.relatedRuleIds?.includes('UI-SPACING-01'));
+      expect(target?.checked).toBe(false);
+    });
+
+    it('Requirement 2 & 7: formatChecklistMarkdown formats checked as [x] and unchecked as [ ]', () => {
+      const ctx = createDefaultProjectContext('/test-app');
+      const checklist = generateMasterChecklist(ctx, [], 'moderate');
+
+      const applicableItems = checklist.items.filter(i => i.status !== 'not-applicable');
+      applicableItems[0].status = 'passed';
+      applicableItems[0].checked = true;
+      applicableItems[1].status = 'warning';
+      applicableItems[1].checked = false;
+
+      const md = formatChecklistMarkdown(checklist);
+      expect(md).toContain(`- [x] **${applicableItems[0].title}**`);
+      expect(md).toContain(`- [ ] **${applicableItems[1].title}**`);
+    });
   });
 });

@@ -7,10 +7,22 @@ export type ChecklistItemStatus =
   | 'warning'
   | 'failed'
   | 'not-applicable'
+  | 'not_applicable'
   | 'ignored'
   | 'needs-review';
 
-export interface ChecklistItem {
+export interface ChecklistCriterion {
+  id: string;
+  category?: string;
+  title: string;
+  description?: string;
+  source?: string;
+  relatedRuleIds?: string[];
+  checked: boolean;
+  manualOverride?: boolean;
+}
+
+export interface ChecklistItem extends ChecklistCriterion {
   id: string;
   category: string;
   title: string;
@@ -18,8 +30,16 @@ export interface ChecklistItem {
   status: ChecklistItemStatus;
   evidence?: string;
   relatedRules?: string[];
+  relatedRuleIds?: string[];
+  checked: boolean;
+  manualOverride?: boolean;
+  source?: string;
   findingCount?: number;
   lastChecked: number;
+  /** Human friendly explanation when check is not relevant or not detected */
+  notApplicableReason?: string;
+  /** Display label (e.g. 'Not relevant to this project' or 'Not detected in this project') */
+  statusLabel?: string;
 }
 
 export interface MasterChecklistSummary {
@@ -29,6 +49,9 @@ export interface MasterChecklistSummary {
   passed: number;
   total: number;
   healthScore: number;
+  healthGrade?: 'Healthy' | 'Needs Attention' | 'Critical';
+  healthExplanation?: string;
+  passPercentage?: number;
 }
 
 export interface MasterChecklist {
@@ -65,6 +88,8 @@ export interface ChangeReview {
     accessibility: number;
     security: number;
     aiSlop: number;
+    design?: number;
   };
+
   potentialConcerns: string[];
 }

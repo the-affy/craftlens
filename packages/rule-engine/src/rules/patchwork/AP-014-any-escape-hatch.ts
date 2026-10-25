@@ -1,13 +1,13 @@
 import ts from 'typescript';
 import {
-  AntiSlopRule,
+  CraftLensRule,
   Finding,
   AnalysisContext,
   astEvidence,
-} from '@anti-slop/core';
-import { ParsedDocument } from '@anti-slop/parser';
+} from '@craftlens/core';
+import { ParsedDocument } from '@craftlens/parser';
 
-export const AP_014_RULE: AntiSlopRule = {
+export const AP_014_RULE: CraftLensRule = {
   id: 'AP-014',
   category: 'patchwork',
   title: 'Unsafe Any Escape Hatch',
@@ -22,6 +22,32 @@ export const AP_014_RULE: AntiSlopRule = {
   platforms: ['typescript'],
   tags: ['types', 'typescript', 'ai-patchwork', 'soundness'],
   minimumAuditLevel: 'moderate',
+  problemTitle: 'TypeScript type safety',
+  whatIsWrong: "Explicit 'any' type bypasses type safety.",
+  whyItMatters:
+    "Using 'any' turns off type checking for this expression and all dependent expressions, masking potential runtime bugs.",
+  howToFix:
+    "Replace 'any' with 'unknown' and use type narrowing, or specify the expected interface.",
+  suggestedSteps: [
+    'Identify the actual shape of the data.',
+    'Declare an explicit interface or type alias.',
+    "If the data is dynamic, use 'unknown' with runtime type guards.",
+  ],
+  structuredRecommendation: {
+    summary: "Replace 'any' with 'unknown' or specify an explicit interface.",
+    why: "Using 'any' turns off type checking for this expression and all dependent expressions.",
+    howToFix: "Replace 'any' with 'unknown' and use type guards or explicit interfaces.",
+    steps: [
+      'Identify the actual shape of the data.',
+      'Declare an explicit interface or type alias.',
+      "If the data is dynamic, use 'unknown' with runtime type guards.",
+    ],
+    fix: {
+      type: 'safe',
+      description: "Replace 'any' with 'unknown'",
+    },
+  },
+  supportedActions: ['fix', 'explain', 'not_a_problem'],
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {

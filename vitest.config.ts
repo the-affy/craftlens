@@ -8,10 +8,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@anti-slop/core': path.resolve(__dirname, './packages/core/src/index.ts'),
-      '@anti-slop/parser': path.resolve(__dirname, './packages/parser/src/index.ts'),
-      '@anti-slop/config': path.resolve(__dirname, './packages/config/src/index.ts'),
-      '@anti-slop/rule-engine': path.resolve(__dirname, './packages/rule-engine/src/index.ts'),
+      '@craftlens/core': path.resolve(__dirname, './packages/core/src/index.ts'),
+      '@craftlens/parser': path.resolve(__dirname, './packages/parser/src/index.ts'),
+      '@craftlens/config': path.resolve(__dirname, './packages/config/src/index.ts'),
+      '@craftlens/rule-engine': path.resolve(__dirname, './packages/rule-engine/src/index.ts'),
+      '@craftlens/design-intelligence': path.resolve(__dirname, './packages/design-intelligence/src/index.ts'),
     },
   },
 });

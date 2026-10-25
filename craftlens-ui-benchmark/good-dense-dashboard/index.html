@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kubernetes Cluster Workloads</title>
+</head>
+<body class="bg-gray-100 text-gray-900 p-6">
+  <div class="bg-white border rounded-lg shadow-sm">
+    <div class="p-4 border-b flex justify-between items-center">
+      <h1 class="text-lg font-semibold">Pod Deployments (Production)</h1>
+      <span class="text-xs text-gray-500">Namespace: prod-us-east-1</span>
+    </div>
+    <table class="w-full text-left text-sm">
+      <thead class="bg-gray-50 border-b text-xs text-gray-500">
+        <tr>
+          <th class="p-3">Pod Name</th>
+          <th class="p-3">Status</th>
+          <th class="p-3">Restarts</th>
+          <th class="p-3">CPU</th>
+          <th class="p-3">Memory</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y text-xs">
+        <tr>
+          <td class="p-3 font-mono">api-gateway-7f89c</td>
+          <td class="p-3 text-emerald-600 font-medium">Running</td>
+          <td class="p-3">0</td>
+          <td class="p-3">45m</td>
+          <td class="p-3">128Mi</td>
+        </tr>
+        <tr>
+          <td class="p-3 font-mono">auth-worker-28ab1</td>
+          <td class="p-3 text-emerald-600 font-medium">Running</td>
+          <td class="p-3">1</td>
+          <td class="p-3">62m</td>
+          <td class="p-3">256Mi</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

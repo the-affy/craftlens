@@ -1,13 +1,13 @@
 import ts from 'typescript';
 import {
-  AntiSlopRule,
+  CraftLensRule,
   Finding,
   AnalysisContext,
   astEvidence,
-} from '@anti-slop/core';
-import { ParsedDocument } from '@anti-slop/parser';
+} from '@craftlens/core';
+import { ParsedDocument } from '@craftlens/parser';
 
-export const CSS_005_RULE: AntiSlopRule = {
+export const CSS_005_RULE: CraftLensRule = {
   id: 'CSS-005',
   category: 'css',
   title: 'Magic Z-Index Escalation',
@@ -22,6 +22,32 @@ export const CSS_005_RULE: AntiSlopRule = {
   platforms: ['react', 'web'],
   tags: ['css', 'styling', 'z-index', 'patchwork'],
   minimumAuditLevel: 'moderate',
+  problemTitle: 'Layer stacking & z-index',
+  whatIsWrong: 'Arbitrary high z-index escalation number used to bypass stacking contexts.',
+  whyItMatters:
+    'Using magic values like 9999 triggers z-index wars that inevitably break modals, dropdowns, and tooltips.',
+  howToFix:
+    'Use structured project z-index tokens (e.g. z-10, z-20, z-50) and manage stacking contexts cleanly.',
+  suggestedSteps: [
+    'Identify what layer this element belongs to (sticky, dropdown, modal, tooltip).',
+    'Replace the magic number with the appropriate layer token.',
+    'If the element is trapped beneath another, fix parent stacking contexts rather than inflating z-index.',
+  ],
+  structuredRecommendation: {
+    summary: 'Use structured z-index scale rather than arbitrary escalation numbers.',
+    why: 'Arbitrary z-index numbers break modal and dropdown stacking orders across the application.',
+    howToFix: 'Use structured project z-index tokens (e.g. z-10 for sticky headers, z-50 for modals) and fix parent stacking contexts.',
+    steps: [
+      'Identify what layer this element belongs to (sticky, dropdown, modal, tooltip).',
+      'Replace the magic number with the appropriate layer token.',
+      'If the element is trapped beneath another, fix parent stacking contexts rather than inflating z-index.',
+    ],
+    fix: {
+      type: 'assisted',
+      description: 'Replace magic z-index with structured layer token',
+    },
+  },
+  supportedActions: ['fix', 'explain', 'not_a_problem'],
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {
@@ -41,6 +67,9 @@ export const CSS_005_RULE: AntiSlopRule = {
           const val = parseInt(match[1], 10);
           if (val >= 999) {
             const location = parsed!.getLocation(node);
+            const originalNodeText = node.getText(sourceFile);
+            const newNodeText = originalNodeText.replace(match[0], 'z-50');
+
             findings.push({
               ruleId: 'CSS-005',
               message: `Suspicious magic z-index escalation "${match[0]}" detected.`,
@@ -50,6 +79,33 @@ export const CSS_005_RULE: AntiSlopRule = {
               confidence: 0.90,
               location,
               findingType: 'problem',
+              fix: {
+                title: `Replace "${match[0]}" with "z-50"`,
+                kind: 'safe',
+                isPreferred: true,
+                changes: [
+                  {
+                    range: location,
+                    newText: newNodeText,
+                    before: originalNodeText,
+                  },
+                ],
+              },
+              designFix: {
+                id: `fix-css-005-class-${location.start.line}`,
+                title: 'Use standard z-index token',
+                description: `Replace escalation ${match[0]} with standard layer token z-50.`,
+                changes: [
+                  {
+                    range: location,
+                    after: newNodeText,
+                    before: originalNodeText,
+                    explanation: 'Standardized z-index layer scale',
+                  },
+                ],
+                safety: 'safe',
+                isPreferred: true,
+              },
               evidence: [
                 astEvidence(
                   `Found excessive magic z-index utility "${match[0]}" in className.`,
@@ -77,6 +133,9 @@ export const CSS_005_RULE: AntiSlopRule = {
 
           if (val !== null && !isNaN(val) && val >= 999) {
             const location = parsed!.getLocation(node);
+            const originalPropText = node.getText(sourceFile);
+            const newPropText = `${propName}: 50`;
+
             findings.push({
               ruleId: 'CSS-005',
               message: `Suspicious magic inline zIndex: ${val} detected.`,
@@ -86,6 +145,33 @@ export const CSS_005_RULE: AntiSlopRule = {
               confidence: 0.92,
               location,
               findingType: 'problem',
+              fix: {
+                title: `Change zIndex to 50`,
+                kind: 'safe',
+                isPreferred: true,
+                changes: [
+                  {
+                    range: location,
+                    newText: newPropText,
+                    before: originalPropText,
+                  },
+                ],
+              },
+              designFix: {
+                id: `fix-css-005-style-${location.start.line}`,
+                title: 'Standardize zIndex value',
+                description: `Change magic ${val} to standardized layer value 50.`,
+                changes: [
+                  {
+                    range: location,
+                    after: newPropText,
+                    before: originalPropText,
+                    explanation: 'Standardized z-index layer value',
+                  },
+                ],
+                safety: 'safe',
+                isPreferred: true,
+              },
               evidence: [
                 astEvidence(
                   `Found inline style zIndex: ${val}`,

@@ -1,6 +1,6 @@
-# Anti-Slop Rulebook
+# CraftLens Rulebook
 
-This document details the active rules implemented in Anti-Slop and the specifications for upcoming high-confidence rules.
+This document details the active rules implemented in CraftLens and the specifications for upcoming high-confidence rules.
 
 ---
 

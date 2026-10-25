@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { SourceLocation, createLocation } from '@anti-slop/core';
+import { SourceLocation, createLocation } from '@craftlens/core';
 
 export interface ParsedDocument {
   filePath: string;

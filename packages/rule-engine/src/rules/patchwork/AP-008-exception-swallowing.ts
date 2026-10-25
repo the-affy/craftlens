@@ -1,14 +1,14 @@
 import ts from 'typescript';
 import {
-  AntiSlopRule,
+  CraftLensRule,
   Finding,
   AnalysisContext,
   astEvidence,
   createLocation,
-} from '@anti-slop/core';
-import { ParsedDocument } from '@anti-slop/parser';
+} from '@craftlens/core';
+import { ParsedDocument } from '@craftlens/parser';
 
-export const AP_008_RULE: AntiSlopRule = {
+export const AP_008_RULE: CraftLensRule = {
   id: 'AP-008',
   category: 'patchwork',
   title: 'Silent Exception Swallowing',
@@ -21,9 +21,34 @@ export const AP_008_RULE: AntiSlopRule = {
   recommendation: 'Handle the failure explicitly, log the error, or rethrow it to caller.',
   fix: 'safe',
   platforms: ['javascript', 'typescript', 'node', 'web'],
-  tags: ['error-handling', 'ai-patchwork', 'robustness'],
-  minimumAuditLevel: 'easy',
-  clusterGroups: ['AS-002-defensive-patchwork'],
+  problemTitle: 'Error handling',
+  whatIsWrong: 'Error is caught but not handled.',
+  whyItMatters:
+    'Failures can disappear silently, making bugs difficult to diagnose and leaving users without useful feedback.',
+  howToFix:
+    'Handle the error explicitly: show an error state, log the failure, retry, or propagate to an error boundary.',
+  suggestedSteps: [
+    'Decide whether the user needs feedback.',
+    'Add an appropriate error state if needed.',
+    'Log the failure if useful for debugging.',
+    'Otherwise rethrow/propagate it.',
+  ],
+  structuredRecommendation: {
+    summary: "Your code catches errors but doesn't do anything with them.",
+    why: 'This catch block catches the failure but does not recover, report it, or pass it to another error boundary.',
+    howToFix: 'Handle the failure explicitly, or propagate it to a layer that can provide the appropriate recovery behavior.',
+    steps: [
+      'Decide whether the user needs feedback.',
+      'Add an appropriate error state if needed.',
+      'Log the failure if useful for debugging.',
+      'Otherwise rethrow/propagate it.',
+    ],
+    fix: {
+      type: 'safe',
+      description: 'Log the error or handle explicitly.',
+    },
+  },
+  supportedActions: ['fix', 'explain', 'not_a_problem'],
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {
@@ -98,7 +123,18 @@ export const AP_008_RULE: AntiSlopRule = {
 
       findings.push({
         ruleId: 'AP-008',
-        message: 'Exception is silently swallowed.',
+        message: 'Error is caught but not handled.',
+        problemTitle: 'Error handling',
+        whatIsWrong: 'The error is caught but never handled.',
+        whyItMatters:
+          'Failures can disappear silently, making bugs difficult to diagnose and leaving users without useful feedback.',
+        howToFix: 'Handle the error explicitly or propagate it to an error boundary.',
+        suggestedSteps: [
+          'Decide whether the user needs feedback.',
+          'Add an appropriate error state if needed.',
+          'Log the failure if useful for debugging.',
+          'Otherwise rethrow or propagate to an error boundary.',
+        ],
         description:
           'The catch block discards the error and provides no recovery, logging, or user feedback. This pattern commonly appears in AI-generated patchwork.',
         severity: 'warning',

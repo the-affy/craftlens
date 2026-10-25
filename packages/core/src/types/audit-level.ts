@@ -34,7 +34,7 @@ export const AUDIT_LEVEL_METAS: Record<AuditLevel, AuditLevelMeta> = {
   hard: {
     level: 'hard',
     title: 'Hard',
-    description: 'Deep quality and anti-slop analysis',
+    description: 'Deep quality and CraftLens design analysis',
     focus: 'Weaker architectural smells, visual genericity, template patterns, intent debt, and design-system drift.',
   },
   strict: {

@@ -42,3 +42,31 @@ export function heuristicEvidence(
 ): Evidence {
   return createEvidence('heuristic', explanation, location, snippet, metadata);
 }
+
+export function regexEvidence(
+  explanation: string,
+  location?: SourceLocation,
+  snippet?: string,
+  metadata?: Record<string, unknown>
+): Evidence {
+  return createEvidence('regex', explanation, location, snippet, metadata);
+}
+
+export function cssEvidence(
+  explanation: string,
+  location?: SourceLocation,
+  snippet?: string,
+  metadata?: Record<string, unknown>
+): Evidence {
+  return createEvidence('css', explanation, location, snippet, metadata);
+}
+
+export function semanticEvidence(
+  explanation: string,
+  location?: SourceLocation,
+  snippet?: string,
+  metadata?: Record<string, unknown>
+): Evidence {
+  return createEvidence('semantic', explanation, location, snippet, metadata);
+}
+

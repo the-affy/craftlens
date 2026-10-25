@@ -8,49 +8,60 @@ import {
   MasterChecklistSummary,
   ChangeReview,
 } from '../types/checklist.js';
+import { calculateHealthScore } from '../scoring/scoring.js';
 
-interface CategoryTemplate {
+export interface CategoryTemplate {
   category: string;
   items: {
     id: string;
     title: string;
     description: string;
     relevantRules: string[];
-    isApplicable: (ctx: ProjectContext) => boolean;
+    relatedRuleIds?: string[];
+    isApplicable: (ctx: ProjectContext) => { applicable: boolean; reason?: string };
   }[];
 }
 
-const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
+export const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
   {
     category: 'Code Quality',
     items: [
       {
         id: 'cq-unused-deps',
-        title: 'Dependency hygiene & cleanliness',
-        description: 'No unvetted or unused heavy packages introduced.',
+        title: 'Dependencies & hygiene',
+        description: 'Packages are vetted and necessary without unused or heavy bloat.',
         relevantRules: ['CD-041', 'CD-050'],
-        isApplicable: ctx => Object.keys(ctx.dependencies).length > 0,
+        isApplicable: ctx => ({
+          applicable: Object.keys(ctx.dependencies || {}).length > 0,
+          reason: 'Not detected in this project',
+        }),
       },
       {
         id: 'cq-exceptions',
-        title: 'Explicit error handling & exception propagation',
-        description: 'Try/catch blocks provide recovery or user feedback without silent failure.',
+        title: 'Errors are handled clearly',
+        description: 'Failures are handled, reported, or propagated instead of disappearing silently.',
         relevantRules: ['AP-008'],
-        isApplicable: () => true,
+        isApplicable: () => ({ applicable: true }),
       },
       {
         id: 'cq-types',
-        title: 'TypeScript type safety & avoidance of any',
+        title: 'TypeScript type safety',
         description: 'Strict type discipline without using any as a compiler escape hatch.',
-        relevantRules: ['AP-014'],
-        isApplicable: ctx => ctx.hasTypeScript,
+        relevantRules: ['AP-014', 'CD-001'],
+        isApplicable: ctx => ({
+          applicable: ctx.hasTypeScript,
+          reason: 'Not relevant — no TypeScript configured in this project',
+        }),
       },
       {
         id: 'cq-component-size',
-        title: 'Component boundary & complexity limits',
+        title: 'Component size & modularity',
         description: 'Components remain cohesive without excessive responsibilities.',
         relevantRules: ['CD-023', 'CD-024'],
-        isApplicable: ctx => !!ctx.framework,
+        isApplicable: ctx => ({
+          applicable: !!ctx.framework,
+          reason: 'Not relevant — no component framework configured',
+        }),
       },
     ],
   },
@@ -59,17 +70,20 @@ const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
     items: [
       {
         id: 'arch-imports',
-        title: 'Architectural layering & clean import boundaries',
+        title: 'Clean architecture & import boundaries',
         description: 'No circular module dependencies or architectural layer bypassing.',
         relevantRules: ['CD-049', 'CD-050'],
-        isApplicable: () => true,
+        isApplicable: () => ({ applicable: true }),
       },
       {
         id: 'arch-design-tokens',
-        title: 'Consistent design system & token usage',
-        description: 'Component styling aligns with defined project spacing, radius, and colors.',
-        relevantRules: ['CSS-018', 'CSS-020'],
-        isApplicable: ctx => !!ctx.cssStrategy,
+        title: 'Consistent spacing system',
+        description: 'Component styling aligns with defined project spacing, radius, and color tokens.',
+        relevantRules: ['CSS-018', 'CSS-020', 'CX-004', 'CX-005', 'UI-SPACING-01'],
+        isApplicable: ctx => ({
+          applicable: !!ctx.cssStrategy || (ctx.baseline && ctx.baseline.components && ctx.baseline.components.length > 0) || true,
+          reason: 'Not detected in this project',
+        }),
       },
     ],
   },
@@ -78,17 +92,23 @@ const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
     items: [
       {
         id: 'state-effects',
-        title: 'Disciplined effect usage & state derivation',
+        title: 'React state & derived values',
         description: 'Derived state is computed directly; effects are not chained in cascades.',
-        relevantRules: ['CD-028', 'CD-031', 'AP-012'],
-        isApplicable: ctx => ctx.framework === 'react' || ctx.framework === 'nextjs',
+        relevantRules: ['CD-028', 'CD-031', 'AP-012', 'RE-001', 'ST-001', 'ST-002', 'ST-003'],
+        isApplicable: ctx => ({
+          applicable: ctx.framework === 'react' || ctx.framework === 'nextjs',
+          reason: 'Not relevant — no React state found in this project',
+        }),
       },
       {
         id: 'state-machines',
-        title: 'Discrete state modeling & boolean sanity',
+        title: 'Discrete state modeling',
         description: 'Avoids multiple conflicting booleans (e.g. isLoading && isError).',
         relevantRules: ['CD-032', 'CD-033'],
-        isApplicable: ctx => !!ctx.framework,
+        isApplicable: ctx => ({
+          applicable: !!ctx.framework,
+          reason: 'Not relevant — no framework UI state found',
+        }),
       },
     ],
   },
@@ -97,24 +117,31 @@ const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
     items: [
       {
         id: 'a11y-interactive-semantics',
-        title: 'Interactive element semantics & native buttons',
+        title: 'Interactive elements are accessible',
         description: 'Click listeners are placed on native interactive elements or elements with role="button".',
-        relevantRules: ['FN-015', 'AX-023'],
-        isApplicable: () => true,
+        relevantRules: ['FN-015', 'AX-023', 'IX-002'],
+        isApplicable: () => ({ applicable: true }),
       },
       {
         id: 'a11y-keyboard-nav',
-        title: 'Keyboard accessibility & key listeners',
+        title: 'Keyboard accessibility',
         description: 'All clickable elements can be triggered via keyboard (Enter/Space).',
         relevantRules: ['FN-016', 'AX-024'],
-        isApplicable: () => true,
+        isApplicable: () => ({ applicable: true }),
       },
       {
         id: 'a11y-accessible-names',
-        title: 'Accessible names on icons and controls',
+        title: 'Accessible names on controls',
         description: 'Icon buttons and interactive controls provide aria-label or accessible text.',
         relevantRules: ['AX-012', 'AX-016'],
-        isApplicable: () => true,
+        isApplicable: () => ({ applicable: true }),
+      },
+      {
+        id: 'a11y-contrast',
+        title: 'Accessible color contrast',
+        description: 'Text and interactive elements meet accessible contrast standards.',
+        relevantRules: ['CL-001', 'AX-016'],
+        isApplicable: () => ({ applicable: true }),
       },
     ],
   },
@@ -123,17 +150,17 @@ const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
     items: [
       {
         id: 'ux-meaningful-actions',
-        title: 'Interactive controls trigger observable outcomes',
-        description: 'Buttons and controls perform state changes, navigation, or submissions.',
-        relevantRules: ['FN-012'],
-        isApplicable: () => true,
+        title: 'Buttons have clear affordances',
+        description: 'Buttons and controls perform state changes, navigation, or submissions with clear visual affordances.',
+        relevantRules: ['FN-012', 'ID-004', 'IX-006'],
+        isApplicable: () => ({ applicable: true }),
       },
       {
         id: 'ux-no-placeholders',
-        title: 'Absence of placeholder text or fake mock data',
+        title: 'Absence of placeholder content',
         description: 'User-facing UI is free of Lorem Ipsum, John Doe, and visible TODOs.',
-        relevantRules: ['PH-011', 'PH-012', 'PH-014', 'PH-027'],
-        isApplicable: () => true,
+        relevantRules: ['PH-011', 'PH-012', 'PH-014', 'PH-027', 'CP-006'],
+        isApplicable: () => ({ applicable: true }),
       },
     ],
   },
@@ -142,17 +169,69 @@ const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
     items: [
       {
         id: 'css-zindex',
-        title: 'Structured z-index hierarchy',
+        title: 'Structured z-index layering',
         description: 'Avoids magic escalation values (e.g. z-[999999]) to patch stacking contexts.',
         relevantRules: ['CSS-005'],
-        isApplicable: () => true,
+        isApplicable: () => ({ applicable: true }),
       },
       {
         id: 'css-layout-patches',
-        title: 'Resilient box model & negative margins',
+        title: 'Layout works without fragile CSS hacks',
         description: 'Layouts rely on flex/grid flow rather than negative margins or !important overrides.',
         relevantRules: ['CSS-006', 'CSS-009', 'AP-020'],
-        isApplicable: () => true,
+        isApplicable: () => ({ applicable: true }),
+      },
+      {
+        id: 'layout-responsive',
+        title: 'Responsive layout is handled',
+        description: 'Responsive layout adapts across viewport sizes without horizontal clipping or broken grids.',
+        relevantRules: ['LY-001', 'LY-002', 'UI-022'],
+        isApplicable: () => ({ applicable: true }),
+      },
+    ],
+  },
+  {
+    category: 'Visual & Hierarchy Quality',
+    items: [
+      {
+        id: 'hier-cta',
+        title: 'Clear CTA hierarchy',
+        description: 'Views establish one unmistakable primary action without competing button weights.',
+        relevantRules: ['VH-007', 'ID-004', 'CP-002'],
+        isApplicable: () => ({ applicable: true }),
+      },
+      {
+        id: 'hier-cards',
+        title: 'Avoid excessive rounded cards',
+        description: 'Information hierarchy avoids excessive identical card grids and card-inside-card nesting.',
+        relevantRules: ['CP-007', 'CP-008', 'UI-006', 'CL-002', 'CL-003'],
+        isApplicable: () => ({ applicable: true }),
+      },
+      {
+        id: 'hier-purpose',
+        title: 'Clear visual hierarchy',
+        description: 'Operational views establish clear visual hierarchy, purposeful decoration, and avoid visual noise.',
+        relevantRules: ['ID-001', 'ID-005', 'VH-008'],
+        isApplicable: () => ({ applicable: true }),
+      },
+    ],
+  },
+  {
+    category: 'Project Consistency & Tokens',
+    items: [
+      {
+        id: 'conv-components',
+        title: 'Component reuse',
+        description: 'Standard project components are reused rather than re-implementing ad-hoc elements.',
+        relevantRules: ['CX-013'],
+        isApplicable: () => ({ applicable: true }),
+      },
+      {
+        id: 'conv-tokens',
+        title: 'Design token scale adherence',
+        description: 'Component dimensions adhere to approved spacing and corner radius scales.',
+        relevantRules: ['CX-004', 'CX-005'],
+        isApplicable: () => ({ applicable: true }),
       },
     ],
   },
@@ -161,10 +240,13 @@ const CHECKLIST_TEMPLATES: CategoryTemplate[] = [
     items: [
       {
         id: 'slop-template-cluster',
-        title: 'Unique domain UI composition vs generic AI SaaS boilerplate',
-        description: 'Page structure avoids the standard composite: centered hero + dual CTA + 3 feature cards + badge.',
-        relevantRules: ['AS-001'],
-        isApplicable: ctx => !!ctx.framework,
+        title: 'Unique domain UI composition',
+        description: 'Page structure avoids generic AI SaaS template boilerplate (hero + dual CTA + 3 feature cards).',
+        relevantRules: ['AS-001', 'UI-017', 'UI-019', 'UI-020'],
+        isApplicable: ctx => ({
+          applicable: !!ctx.framework,
+          reason: 'Not relevant — no component views found',
+        }),
       },
     ],
   },
@@ -177,7 +259,7 @@ export function generateMasterChecklist(
   previousChecklist?: MasterChecklist
 ): MasterChecklist {
   const items: ChecklistItem[] = [];
-  const projectName = projectContext.rootPath.split('/').pop() || 'Workspace';
+  const projectName = (projectContext?.rootPath ? projectContext.rootPath.split('/').pop() : (projectContext as any)?.projectName) || 'Workspace';
 
   let errors = 0;
   let warnings = 0;
@@ -192,20 +274,31 @@ export function generateMasterChecklist(
 
   for (const group of CHECKLIST_TEMPLATES) {
     for (const tpl of group.items) {
-      if (!tpl.isApplicable(projectContext)) {
+      const ruleIds = tpl.relatedRuleIds || tpl.relevantRules;
+      const prevItem = previousChecklist?.items?.find(i => i.id === tpl.id);
+
+      const applicability = tpl.isApplicable(projectContext);
+      if (!applicability.applicable) {
+        const checked = prevItem?.manualOverride ? prevItem.checked : false;
         items.push({
           id: tpl.id,
           category: group.category,
           title: tpl.title,
           description: tpl.description,
           status: 'not-applicable',
+          notApplicableReason: applicability.reason || 'Not relevant to this project',
+          statusLabel: applicability.reason || 'Not relevant to this project',
+          checked,
+          manualOverride: prevItem?.manualOverride || false,
+          relatedRules: ruleIds,
+          relatedRuleIds: ruleIds,
           lastChecked: Date.now(),
         });
         continue;
       }
 
       // Check if any active findings match this item's relevant rules
-      const matchingFindings = findings.filter(f => tpl.relevantRules.includes(f.ruleId));
+      const matchingFindings = findings.filter(f => ruleIds.includes(f.ruleId));
 
       let status: ChecklistItemStatus = 'passed';
       let evidence: string | undefined;
@@ -213,10 +306,42 @@ export function generateMasterChecklist(
       if (matchingFindings.length > 0) {
         const hasErrors = matchingFindings.some(f => f.severity === 'blocker' || f.severity === 'error');
         status = hasErrors ? 'failed' : 'warning';
-        evidence = `${matchingFindings.length} issue(s) detected across ${matchingFindings.map(f => f.ruleId).join(', ')}`;
-      } else {
+
+        // Group evidence by unique issue title/rule instead of repeating rule IDs
+        const distinctRules = Array.from(new Set(matchingFindings.map(f => f.problemTitle || f.ruleId)));
+        evidence = `${matchingFindings.length} issue(s) detected across ${distinctRules.join(', ')}`;
+      }
+
+      let checked = status === 'passed';
+      let manualOverride = false;
+
+      if (prevItem?.manualOverride) {
+        if ((prevItem.findingCount ?? 0) === 0 && matchingFindings.length > 0) {
+          checked = false;
+          manualOverride = false;
+        } else {
+          checked = prevItem.checked;
+          manualOverride = true;
+          if (checked && status !== 'passed') {
+            status = 'passed';
+          } else if (!checked && status === 'passed') {
+            status = 'failed';
+          }
+        }
+      } else if (prevItem?.checked && matchingFindings.length === 0) {
+        checked = true;
+      }
+
+      if (checked) {
         passedCount++;
       }
+
+      const statusLabel =
+        status === 'passed'
+          ? 'Passed'
+          : status === 'failed'
+          ? 'Failed'
+          : 'Warning';
 
       items.push({
         id: tpl.id,
@@ -224,8 +349,12 @@ export function generateMasterChecklist(
         title: tpl.title,
         description: tpl.description,
         status,
+        statusLabel,
         evidence,
-        relatedRules: tpl.relevantRules,
+        checked,
+        manualOverride,
+        relatedRules: ruleIds,
+        relatedRuleIds: ruleIds,
         findingCount: matchingFindings.length,
         lastChecked: Date.now(),
       });
@@ -233,9 +362,8 @@ export function generateMasterChecklist(
   }
 
   const applicableItems = items.filter(i => i.status !== 'not-applicable');
-  const healthScore = applicableItems.length > 0
-    ? Math.max(0, Math.round(((applicableItems.filter(i => i.status === 'passed').length) / applicableItems.length) * 100) - (errors * 10 + warnings * 3))
-    : 100;
+  const { score: healthScore, grade: healthGrade, breakdown: healthExplanation } =
+    calculateHealthScore(passedCount, applicableItems.length, errors, warnings, suggestions);
 
   const summary: MasterChecklistSummary = {
     errors,
@@ -243,7 +371,9 @@ export function generateMasterChecklist(
     suggestions,
     passed: passedCount,
     total: applicableItems.length,
-    healthScore: Math.max(0, Math.min(100, healthScore)),
+    healthScore,
+    healthGrade,
+    healthExplanation,
   };
 
   return {
@@ -257,60 +387,57 @@ export function generateMasterChecklist(
 
 export function formatChecklistMarkdown(checklist: MasterChecklist): string {
   const dateStr = new Date(checklist.lastAudit).toISOString().split('T')[0];
+  const totalFindings = checklist.summary.errors + checklist.summary.warnings + checklist.summary.suggestions;
+  const healthStatusText = checklist.summary.healthGrade || (checklist.summary.errors > 0 ? 'Needs Attention' : checklist.summary.warnings > 0 ? 'Needs Attention' : 'Healthy');
+
   const lines: string[] = [
-    `# Anti-Slop Master Audit`,
+    `# CraftLens Master Audit`,
+    `────────────────────────────────────`,
     `**Project:** ${checklist.projectName}`,
-    `**Last Audit:** ${dateStr} | **Level:** \`${checklist.auditLevel.toUpperCase()}\``,
-    `**Health Score:** ${checklist.summary.healthScore}/100`,
+    `**Last Audit:** ${dateStr} | **Level:** \`${typeof checklist.auditLevel === 'string' && checklist.auditLevel.trim() ? checklist.auditLevel.trim().toUpperCase() : 'MODERATE'}\``,
+    `**Health:** ${checklist.summary.healthScore} / 100 (${healthStatusText})`,
     '',
-    `## Summary`,
-    `- **Status:** ${checklist.summary.errors > 0 ? '❌ Failing Requirements' : checklist.summary.warnings > 0 ? '⚠️ Needs Attention' : '✅ Healthy'}`,
-    `- **Passed Items:** ${checklist.summary.passed} / ${checklist.summary.total}`,
-    `- **Findings:** ${checklist.summary.errors} Error(s), ${checklist.summary.warnings} Warning(s), ${checklist.summary.suggestions} Suggestion(s)`,
+    `## Checklist Status`,
+    `${checklist.summary.passed} / ${checklist.summary.total} checks passed`,
     '',
-    '---',
+    `## Findings`,
+    `${totalFindings} issues found`,
+    `• ${checklist.summary.errors} error(s)`,
+    `• ${checklist.summary.warnings} warning(s)`,
+    `• ${checklist.summary.suggestions} suggestion(s)`,
+    '',
+    `────────────────────────────────────`,
   ];
 
-  // Group by category
-  const categories = Array.from(new Set(checklist.items.map(i => i.category)));
-
-  for (const cat of categories) {
-    const catItems = checklist.items.filter(i => i.category === cat);
-    lines.push(`## ${cat}`);
-
-    for (const item of catItems) {
-      let mark = '[ ]';
-      let statusBadge = '';
-
-      switch (item.status) {
-        case 'passed':
-          mark = '[x]';
-          statusBadge = '`PASSED`';
-          break;
-        case 'warning':
-          mark = '[ ]';
-          statusBadge = '`WARNING`';
-          break;
-        case 'failed':
-          mark = '[ ]';
-          statusBadge = '`FAILED`';
-          break;
-        case 'needs-review':
-          mark = '[ ]';
-          statusBadge = '`NEEDS REVIEW`';
-          break;
-        case 'not-applicable':
-          mark = '[-]';
-          statusBadge = '`NOT APPLICABLE`';
-          break;
-        default:
-          mark = '[ ]';
-          statusBadge = `\`${item.status.toUpperCase()}\``;
-      }
-
-      const evidenceLine = item.evidence ? ` — *(${item.evidence})*` : '';
-      lines.push(`- ${mark} **${item.title}** ${statusBadge}${evidenceLine}`);
+  const failedOrWarning = checklist.items.filter(i => !i.checked && (i.status === 'failed' || i.status === 'warning'));
+  if (failedOrWarning.length > 0) {
+    lines.push(`## Issues Needing Attention`);
+    for (const item of failedOrWarning) {
+      const itemStatus = typeof item.status === 'string' && item.status.trim() ? item.status.trim().toUpperCase() : 'OPEN';
+      const statusBadge = `\`${itemStatus}\``;
+      lines.push(`- [ ] **${item.title}** ${statusBadge} (${item.findingCount || 1} location${(item.findingCount || 1) > 1 ? 's' : ''})`);
       lines.push(`  > ${item.description}`);
+      if (item.evidence) {
+        lines.push(`  *${item.evidence}*`);
+      }
+      lines.push('');
+    }
+  }
+
+  const passedItems = checklist.items.filter(i => (i.checked || i.status === 'passed') && i.status !== 'not-applicable');
+  if (passedItems.length > 0) {
+    lines.push(`## Passed Checks`);
+    for (const item of passedItems) {
+      lines.push(`- [x] **${item.title}** \`PASSED\``);
+    }
+    lines.push('');
+  }
+
+  const notApplicableItems = checklist.items.filter(i => i.status === 'not-applicable');
+  if (notApplicableItems.length > 0) {
+    lines.push(`## Not Relevant to This Project`);
+    for (const item of notApplicableItems) {
+      lines.push(`- [-] **${item.title}**: ${item.notApplicableReason || 'Not detected in this project'}`);
     }
     lines.push('');
   }
@@ -364,12 +491,14 @@ export function generateChangeReview(
 
   const qualityScores = {
     code: calculatePillarScore(['CD-']),
-    architecture: calculatePillarScore(['CD-049', 'CD-050']),
-    ux: calculatePillarScore(['FN-']),
+    architecture: calculatePillarScore(['CD-049', 'CD-050', 'CX-013']),
+    ux: calculatePillarScore(['FN-', 'ID-004']),
     accessibility: calculatePillarScore(['AX-', 'FN-015', 'FN-016']),
     security: calculatePillarScore(['SEC-']),
     aiSlop: calculatePillarScore(['AP-', 'AS-']),
+    design: calculatePillarScore(['VH-', 'CP-', 'CX-', 'ID-']),
   };
+
 
   const potentialConcerns: string[] = [];
   for (const f of newFindings) {
@@ -395,14 +524,14 @@ export function formatChangeReviewMarkdown(review: ChangeReview): string {
 
   const lines = [
     '────────────────────────────────────',
-    'Anti-Slop · Change Review',
+    'CraftLens · Change Review',
     `${review.filesChanged.length} file(s) changed (+${review.linesAdded} / -${review.linesRemoved} lines)`,
     '',
     'New Findings:',
     `  ${errorCount} error(s)`,
     `  ${warningCount} warning(s)`,
     `  ${suggestionCount} suggestion(s)`,
-    review.resolvedFindings.length > 0 ? `  ✓ ${review.resolvedFindings.length} issue(s) resolved` : '',
+    review.resolvedFindings.length > 0 ? `  ${review.resolvedFindings.length} issue(s) resolved` : '',
     '',
     'Quality Health:',
     `  Code Quality:    ${review.qualityScores.code}/100`,
@@ -411,8 +540,10 @@ export function formatChangeReviewMarkdown(review: ChangeReview): string {
     `  Accessibility:   ${review.qualityScores.accessibility}/100`,
     `  Security:        ${review.qualityScores.security}/100`,
     `  AI-Slop Index:   ${review.qualityScores.aiSlop}/100`,
+    review.qualityScores.design !== undefined ? `  Visual Design:   ${review.qualityScores.design}/100` : '',
     '',
   ];
+
 
   if (review.potentialConcerns.length > 0) {
     lines.push('Potential Concerns Introduced by This Change:');

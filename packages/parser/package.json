@@ -1,7 +1,7 @@
 {
-  "name": "@anti-slop/parser",
+  "name": "@craftlens/parser",
   "version": "0.1.0",
-  "description": "Anti-Slop robust AST parser and source traversal abstraction",
+  "description": "CraftLens robust AST parser and source traversal abstraction",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -9,7 +9,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@anti-slop/core": "*",
+    "@craftlens/core": "*",
     "typescript": "^5.6.3"
   },
   "devDependencies": {

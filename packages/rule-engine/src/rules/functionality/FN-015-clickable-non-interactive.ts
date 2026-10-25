@@ -1,13 +1,13 @@
 import ts from 'typescript';
 import {
-  AntiSlopRule,
+  CraftLensRule,
   Finding,
   AnalysisContext,
   astEvidence,
-} from '@anti-slop/core';
-import { ParsedDocument } from '@anti-slop/parser';
+} from '@craftlens/core';
+import { ParsedDocument } from '@craftlens/parser';
 
-export const FN_015_RULE: AntiSlopRule = {
+export const FN_015_RULE: CraftLensRule = {
   id: 'FN-015',
   category: 'functionality',
   title: 'Clickable Non-Interactive Element',
@@ -22,6 +22,32 @@ export const FN_015_RULE: AntiSlopRule = {
   platforms: ['react', 'web'],
   tags: ['accessibility', 'ux', 'interactive', 'a11y', 'ai-patchwork'],
   minimumAuditLevel: 'easy',
+  problemTitle: 'Interactive controls',
+  whatIsWrong: 'Clickable element lacks button semantics and keyboard navigation.',
+  whyItMatters:
+    'Keyboard-only and screen reader users cannot activate this control, violating WCAG accessibility guidelines.',
+  howToFix:
+    'Convert the element to a semantic <button type="button"> or add role="button", tabIndex={0}, and an onKeyDown handler.',
+  suggestedSteps: [
+    'Replace <div> or <span> with a native <button type="button">.',
+    'If replacing tag is constrained, add role="button" and tabIndex={0}.',
+    'Attach an onKeyDown handler to respond to Enter and Space keys.',
+  ],
+  structuredRecommendation: {
+    summary: 'Convert clickable non-interactive element to native button or supply button role.',
+    why: 'Non-interactive elements with click listeners cannot be reached or activated by keyboard users.',
+    howToFix: 'Use a semantic <button type="button"> or supply role="button", tabIndex={0}, and an onKeyDown handler.',
+    steps: [
+      'Replace <div> or <span> with a native <button type="button">.',
+      'If replacing tag is constrained, add role="button" and tabIndex={0}.',
+      'Attach an onKeyDown handler to respond to Enter and Space keys.',
+    ],
+    fix: {
+      type: 'assisted',
+      description: 'Add role="button" and tabIndex={0}',
+    },
+  },
+  supportedActions: ['fix', 'explain', 'not_a_problem'],
   detect(context: AnalysisContext): Finding[] {
     const parsed = context.parsedAst as ParsedDocument | undefined;
     if (!parsed || !parsed.sourceFile) {

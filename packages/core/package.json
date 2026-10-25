@@ -1,7 +1,7 @@
 {
-  "name": "@anti-slop/core",
+  "name": "@craftlens/core",
   "version": "0.1.0",
-  "description": "Anti-Slop core types, analysis models, evidence, scoring, and engine contracts",
+  "description": "CraftLens core types, analysis models, evidence, scoring, and engine contracts",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {

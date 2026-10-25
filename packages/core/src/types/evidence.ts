@@ -11,7 +11,10 @@ export type EvidenceType =
   | 'network'
   | 'semantic'
   | 'cluster'
-  | 'heuristic';
+  | 'regex'
+  | 'heuristic'
+  | 'rule';
+
 
 export interface Evidence {
   type: EvidenceType;

@@ -4,7 +4,9 @@
     { "path": "./packages/core" },
     { "path": "./packages/parser" },
     { "path": "./packages/config" },
+    { "path": "./packages/design-intelligence" },
     { "path": "./packages/rule-engine" },
     { "path": "./apps/vscode-extension" }
   ]
 }
+

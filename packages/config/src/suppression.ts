@@ -24,26 +24,34 @@ export class SuppressionManager {
       const lineNum = i + 1;
       const line = lines[i];
 
-      // Match: // anti-slop-disable-next-line [ruleIds...]
-      const nextLineMatch = line.match(/\/\/\s*anti-slop-disable-next-line(?:\s+([a-zA-Z0-9_,\s-]+))?/);
+      // Match: // craftlens-disable-next-line [ruleIds...]
+      const nextLineMatch = line.match(/\/\/\s*craftlens-(?:disable|ignore)-next-line(?:\s+([a-zA-Z0-9_.,\s-]+))?/i);
       if (nextLineMatch) {
         const rules = nextLineMatch[1] ? this.parseRuleList(nextLineMatch[1]) : 'all';
         this.nextLineSuppressions.set(lineNum + 1, rules);
         continue;
       }
 
-      // Match: // anti-slop-disable-line [ruleIds...]
-      const currentLineMatch = line.match(/\/\/\s*anti-slop-disable-line(?:\s+([a-zA-Z0-9_,\s-]+))?/);
+      // Match: // craftlens-disable-line [ruleIds...]
+      const currentLineMatch = line.match(/\/\/\s*craftlens-(?:disable|ignore)-line(?:\s+([a-zA-Z0-9_.,\s-]+))?/i);
       if (currentLineMatch) {
         const rules = currentLineMatch[1] ? this.parseRuleList(currentLineMatch[1]) : 'all';
         this.currentLineSuppressions.set(lineNum, rules);
         continue;
       }
 
-      // Match: /* anti-slop-disable [ruleIds...] */
-      const disableBlockMatch = line.match(/\/\*\s*anti-slop-disable(?:\s+([a-zA-Z0-9_,\s-]+))?\s*\*\//);
-      if (disableBlockMatch) {
-        const rules = disableBlockMatch[1] ? this.parseRuleList(disableBlockMatch[1]) : 'all';
+      // Match: // craftlens-ignore [ruleIds...] on the same line
+      const lineIgnoreMatch = line.match(/\/\/\s*craftlens-ignore(?:\s+([a-zA-Z0-9_.,\s-]+))?$/i);
+      if (lineIgnoreMatch) {
+        const rules = lineIgnoreMatch[1] ? this.parseRuleList(lineIgnoreMatch[1]) : 'all';
+        this.currentLineSuppressions.set(lineNum, rules);
+        continue;
+      }
+
+      // Match: // craftlens-disable [ruleIds...]
+      const lineDisableMatch = line.match(/\/\/\s*craftlens-disable(?:\s+([a-zA-Z0-9_.,\s-]+))?$/i);
+      if (lineDisableMatch) {
+        const rules = lineDisableMatch[1] ? this.parseRuleList(lineDisableMatch[1]) : 'all';
         if (rules === 'all') {
           openRanges.set('all', lineNum);
         } else {
@@ -54,8 +62,16 @@ export class SuppressionManager {
         continue;
       }
 
-      // Match: /* anti-slop-enable [ruleIds...] */
-      const enableBlockMatch = line.match(/\/\*\s*anti-slop-enable(?:\s+([a-zA-Z0-9_,\s-]+))?\s*\*\//);
+      // Match: /* craftlens-disable [ruleIds...] */
+      const disableBlockMatch = line.match(/\/\*\s*craftlens-(?:disable|ignore)(?:\s+([a-zA-Z0-9_.,\s-]+))?\s*\*\//i);
+      if (disableBlockMatch) {
+        const rules = disableBlockMatch[1] ? this.parseRuleList(disableBlockMatch[1]) : 'all';
+        this.currentLineSuppressions.set(lineNum, rules);
+        continue;
+      }
+
+      // Match: /* craftlens-enable [ruleIds...] */
+      const enableBlockMatch = line.match(/\/\*\s*craftlens-enable(?:\s+([a-zA-Z0-9_.,\s-]+))?\s*\*\//i);
       if (enableBlockMatch) {
         const rules = enableBlockMatch[1] ? this.parseRuleList(enableBlockMatch[1]) : 'all';
         if (rules === 'all') {
@@ -76,8 +92,8 @@ export class SuppressionManager {
         continue;
       }
 
-      // Match top of file: /* anti-slop-disable-file [ruleIds...] */
-      const disableFileMatch = line.match(/\/\*\s*anti-slop-disable-file(?:\s+([a-zA-Z0-9_,\s-]+))?\s*\*\//);
+      // Match top of file: /* craftlens-disable-file [ruleIds...] */
+      const disableFileMatch = line.match(/\/\*\s*craftlens-(?:disable|ignore)-file(?:\s+([a-zA-Z0-9_.,\s-]+))?\s*\*\//i);
       if (disableFileMatch) {
         const rules = disableFileMatch[1] ? this.parseRuleList(disableFileMatch[1]) : 'all';
         if (rules === 'all') {
@@ -101,7 +117,11 @@ export class SuppressionManager {
   }
 
   private parseRuleList(str: string): Set<string> {
-    const list = str.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    const cleaned = str.replace(/--.*$/, '').replace(/#.*$/, '');
+    const list = cleaned
+      .split(/[,\s]+/)
+      .map(s => s.trim())
+      .filter(s => Boolean(s) && /^[A-Za-z0-9_.-]+$/.test(s));
     return new Set(list);
   }
 

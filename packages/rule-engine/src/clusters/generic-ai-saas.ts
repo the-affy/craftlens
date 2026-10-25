@@ -1,4 +1,4 @@
-import { Finding, RuleCluster, calculateAggregateConfidence } from '@anti-slop/core';
+import { Finding, RuleCluster, calculateAggregateConfidence } from '@craftlens/core';
 
 export const AS_001_CLUSTER: RuleCluster = {
   id: 'AS-001',

@@ -1,10 +1,14 @@
 {
-  "name": "anti-slop-vscode",
-  "displayName": "Anti-Slop",
-  "description": "Continuous code quality reviewer detecting fragile patterns, AI patchwork, and UX flaws",
-  "version": "0.1.0",
-  "publisher": "anti-slop",
+  "name": "craftlens",
+  "displayName": "CraftLens",
+  "description": "A second pair of eyes for AI-generated software. Find problems, understand why they matter, and improve them.",
+  "version": "0.1.16",
+  "publisher": "craftlens",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/craftlens/craftlens"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -16,61 +20,346 @@
     "onLanguage:javascript",
     "onLanguage:javascriptreact",
     "onLanguage:typescript",
-    "onLanguage:typescriptreact"
+    "onLanguage:typescriptreact",
+    "onLanguage:html",
+    "onLanguage:vue",
+    "onLanguage:svelte",
+    "onLanguage:css"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "antiSlop.runAudit",
-        "title": "Anti-Slop: Run Audit (Choose Intensity Level)",
-        "category": "Anti-Slop"
+        "command": "craftlens.debugUiAnalysis",
+        "title": "CraftLens: Debug UI Analysis",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.openMasterChecklist",
-        "title": "Anti-Slop: Open Master Audit Checklist",
-        "category": "Anti-Slop"
+        "command": "craftlens.runAudit",
+        "title": "CraftLens: Run Audit",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.scanCurrentFile",
-        "title": "Anti-Slop: Scan Current File",
-        "category": "Anti-Slop"
+        "command": "craftlens.openMasterChecklist",
+        "title": "CraftLens: Open Master Audit Checklist",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.scanWorkspace",
-        "title": "Anti-Slop: Scan Workspace",
-        "category": "Anti-Slop"
+        "command": "craftlens.scanCurrentFile",
+        "title": "CraftLens: Scan Current File",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.showReport",
-        "title": "Anti-Slop: Show Report",
-        "category": "Anti-Slop"
+        "command": "craftlens.scanWorkspace",
+        "title": "CraftLens: Scan Workspace",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.explainFinding",
-        "title": "Anti-Slop: Explain Finding",
-        "category": "Anti-Slop"
+        "command": "craftlens.showReport",
+        "title": "CraftLens: Show Report",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.ignoreRule",
-        "title": "Anti-Slop: Ignore Rule",
-        "category": "Anti-Slop"
+        "command": "craftlens.explainFinding",
+        "title": "CraftLens: Explain Finding",
+        "category": "CraftLens"
       },
       {
-        "command": "antiSlop.resetSuppressions",
-        "title": "Anti-Slop: Reset Suppressions",
-        "category": "Anti-Slop"
+        "command": "craftlens.ignoreRule",
+        "title": "CraftLens: Ignore Rule",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.suggestBetterDesign",
+        "title": "CraftLens: Suggest Better Design",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.previewDesignFix",
+        "title": "CraftLens: Preview Proposed Fix",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.createCustomRule",
+        "title": "CraftLens: Create Custom Rule",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.generateProjectRules",
+        "title": "CraftLens: Generate Project Rules",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.markNotAProblem",
+        "title": "CraftLens: Mark as Not a Problem",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.resetSuppressions",
+        "title": "CraftLens: Reset Suppressions",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.openFindingLocation",
+        "title": "CraftLens: Open Finding at Location",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.openProblems",
+        "title": "CraftLens: Open Problems Panel",
+        "category": "CraftLens",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "craftlens.nextIssue",
+        "title": "CraftLens: Next Issue",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.previousIssue",
+        "title": "CraftLens: Previous Issue",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.filterSidebar",
+        "title": "CraftLens: Filter Issues",
+        "category": "CraftLens",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "craftlens.clearSidebarFilter",
+        "title": "CraftLens: Clear Filter",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.refreshSidebar",
+        "title": "CraftLens: Refresh Issues",
+        "category": "CraftLens",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "craftlens.addSkill",
+        "title": "CraftLens: Add Skill",
+        "category": "CraftLens",
+        "icon": "$(add)"
+      },
+      {
+        "command": "craftlens.toggleSkill",
+        "title": "CraftLens: Toggle Skill Active State",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.installSkill",
+        "title": "CraftLens: Install Skill",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.deleteSkill",
+        "title": "CraftLens: Delete Skill",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.openSkillSource",
+        "title": "CraftLens: Open Skill Source",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.setRuleExecutionMode",
+        "title": "CraftLens: Set Rule Execution Mode",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.checkSkillUpdates",
+        "title": "CraftLens: Check Skill Updates",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.inspectRule",
+        "title": "CraftLens: Inspect Rule",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.overrideRule",
+        "title": "CraftLens: Override Rule",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.fixAllSafe",
+        "title": "CraftLens: Fix All Safe Issues",
+        "category": "CraftLens",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "craftlens.createAuditSnapshot",
+        "title": "CraftLens: Capture Audit Snapshot",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.showHealthBreakdown",
+        "title": "CraftLens: How is Health Score Calculated?",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.toggleAutoAudit",
+        "title": "CraftLens: Toggle Auto Audit",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.showFindingDetail",
+        "title": "CraftLens: Show Issue Details",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.designAudit",
+        "title": "CraftLens: Design Audit",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.securityAudit",
+        "title": "CraftLens: Security Audit",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.codeAudit",
+        "title": "CraftLens: Code Quality Audit",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.acceptFindingFix",
+        "title": "CraftLens: Accept Fix",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.applyQuickFix",
+        "title": "CraftLens: Apply Quick Fix",
+        "category": "CraftLens",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "craftlens.rejectFinding",
+        "title": "CraftLens: Reject / Dismiss Finding",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.reviewDesignSystem",
+        "title": "CraftLens: Review Design System",
+        "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.recommendedSkills",
+        "title": "CraftLens: Recommended Tools & Skills",
+        "category": "CraftLens"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "craftlens-view",
+          "title": "CraftLens",
+          "icon": "media/icons/craftlens-sidebar.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "craftlens-panel",
+          "title": "CraftLens Details",
+          "icon": "media/icons/craftlens-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "craftlens-view": [
+        {
+          "id": "craftlens.sidebar",
+          "name": "CraftLens",
+          "type": "webview"
+        }
+      ],
+      "craftlens-panel": [
+        {
+          "id": "craftlens.detailPanel",
+          "name": "Issue Explanation & Fix",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "craftlens.runAudit",
+          "when": "view == craftlens.sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "craftlens.filterSidebar",
+          "when": "view == craftlens.sidebar",
+          "group": "navigation@2"
+        },
+        {
+          "command": "craftlens.openProblems",
+          "when": "view == craftlens.sidebar",
+          "group": "navigation@3"
+        },
+        {
+          "command": "craftlens.openMasterChecklist",
+          "when": "view == craftlens.sidebar",
+          "group": "navigation@4"
+        },
+        {
+          "command": "craftlens.refreshSidebar",
+          "when": "view == craftlens.sidebar",
+          "group": "navigation@5"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "craftlens.openFindingLocation",
+          "when": "viewItem == finding",
+          "group": "inline@1"
+        },
+        {
+          "command": "craftlens.explainFinding",
+          "when": "viewItem == finding",
+          "group": "inline@2"
+        },
+        {
+          "command": "craftlens.applyQuickFix",
+          "when": "viewItem == finding-fixable",
+          "group": "inline@3"
+        },
+        {
+          "command": "craftlens.markNotAProblem",
+          "when": "viewItem == finding || viewItem == finding-fixable",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "craftlens.ignoreRule",
+          "when": "viewItem == finding || viewItem == finding-fixable",
+          "group": "1_modification@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "craftlens.nextIssue",
+        "key": "alt+f8",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "craftlens.previousIssue",
+        "key": "shift+alt+f8",
+        "when": "editorTextFocus"
       }
     ],
     "configuration": {
-      "title": "Anti-Slop",
+      "title": "CraftLens",
       "properties": {
-        "antiSlop.enabled": {
+        "craftlens.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable or disable Anti-Slop analysis."
+          "description": "Enable or disable CraftLens analysis."
         },
-        "antiSlop.severity": {
+        "craftlens.severity": {
           "type": "string",
           "enum": [
             "blocker",
@@ -82,7 +371,7 @@
           "default": "warning",
           "description": "Minimum severity threshold for displayed diagnostics."
         },
-        "antiSlop.auditLevel": {
+        "craftlens.auditLevel": {
           "type": "string",
           "enum": [
             "easy",
@@ -93,32 +382,32 @@
           "default": "moderate",
           "description": "Audit sensitivity level: easy, moderate (recommended), hard, strict."
         },
-        "antiSlop.autoAudit": {
+        "craftlens.autoAudit": {
           "type": "boolean",
           "default": true,
           "description": "Continuously update Master Audit Checklist as code is changed."
         },
-        "antiSlop.enableCodeLens": {
+        "craftlens.enableCodeLens": {
           "type": "boolean",
           "default": true,
           "description": "Display quiet inline CodeLens hints above findings."
         },
-        "antiSlop.persistAudit": {
+        "craftlens.persistAudit": {
           "type": "boolean",
           "default": true,
-          "description": "Persist Master Audit Checklist to .antislop/checklist.md across sessions."
+          "description": "Persist Master Audit Checklist across sessions."
         },
-        "antiSlop.scanOnSave": {
+        "craftlens.scanOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Run Anti-Slop diagnostics whenever a file is saved."
+          "description": "Run CraftLens diagnostics whenever a file is saved."
         },
-        "antiSlop.scanOnChange": {
+        "craftlens.scanOnChange": {
           "type": "boolean",
           "default": true,
-          "description": "Run fast-path Anti-Slop diagnostics as files are edited (debounced)."
+          "description": "Run fast-path CraftLens diagnostics as files are edited (debounced)."
         },
-        "antiSlop.maxDiagnosticsPerFile": {
+        "craftlens.maxDiagnosticsPerFile": {
           "type": "number",
           "default": 50,
           "description": "Maximum number of diagnostics reported per file."
@@ -129,17 +418,29 @@
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "watch": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "package": "node ../../scripts/package-extension.js",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@anti-slop/config": "*",
-    "@anti-slop/core": "*",
-    "@anti-slop/parser": "*",
-    "@anti-slop/rule-engine": "*"
+    "@craftlens/config": "*",
+    "@craftlens/core": "*",
+    "@craftlens/design-intelligence": "*",
+    "@craftlens/parser": "*",
+    "@craftlens/rule-engine": "*"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3"
-  }
+  },
+  "icon": "resources/icon.png",
+  "keywords": [
+    "craftlens",
+    "ai-code-review",
+    "ui-ux",
+    "accessibility",
+    "linter",
+    "code-quality",
+    "design-system"
+  ]
 }
