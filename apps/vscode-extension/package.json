@@ -2,12 +2,16 @@
   "name": "craftlens",
   "displayName": "CraftLens Next",
   "description": "A second pair of eyes for AI-generated software. Find problems, understand why they matter, and improve them.",
-  "version": "0.2.0-next.1",
-  "publisher": "craftlens",
+  "version": "1.1.0",
+  "publisher": "theaffy",
   "license": "MIT",
+  "homepage": "https://github.com/the-affy/craftlens",
   "repository": {
     "type": "git",
-    "url": "https://github.com/craftlens/craftlens"
+    "url": "https://github.com/the-affy/craftlens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/the-affy/craftlens/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -42,13 +46,51 @@
       },
       {
         "command": "craftlens.runAudit",
-        "title": "CraftLens: Run Audit",
-        "category": "CraftLens"
+        "title": "Run Audit",
+        "category": "CraftLens",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "craftlens.runQA",
+        "title": "CraftLens: Run QA",
+        "category": "CraftLens",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "craftlens.runSelfQA",
+        "title": "CraftLens: Run Self QA",
+        "category": "CraftLens",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "craftlens.verifyRelease",
+        "title": "CraftLens: Verify Release",
+        "category": "CraftLens",
+        "icon": "$(rocket)"
       },
       {
         "command": "craftlens.openMasterChecklist",
-        "title": "CraftLens: Open Master Audit Checklist",
-        "category": "CraftLens"
+        "title": "Open Master Audit Checklist",
+        "category": "CraftLens",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "craftlens.openIssuesFile",
+        "title": "Open Issues Document",
+        "category": "CraftLens",
+        "icon": "$(issues)"
+      },
+      {
+        "command": "craftlens.openSuggestionsFile",
+        "title": "Open Suggestions Document",
+        "category": "CraftLens",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "craftlens.openChangesFile",
+        "title": "Open User Changes Document",
+        "category": "CraftLens",
+        "icon": "$(history)"
       },
       {
         "command": "craftlens.scanCurrentFile",
@@ -114,7 +156,7 @@
         "command": "craftlens.openProblems",
         "title": "CraftLens: Open Problems Panel",
         "category": "CraftLens",
-        "icon": "$(checklist)"
+        "icon": "$(issues)"
       },
       {
         "command": "craftlens.nextIssue",
@@ -141,7 +183,7 @@
         "command": "craftlens.refreshSidebar",
         "title": "CraftLens: Refresh Issues",
         "category": "CraftLens",
-        "icon": "$(refresh)"
+        "icon": "$(sync)"
       },
       {
         "command": "craftlens.addSkill",
@@ -216,6 +258,11 @@
         "category": "CraftLens"
       },
       {
+        "command": "craftlens.selectIssue",
+        "title": "CraftLens: Select Issue",
+        "category": "CraftLens"
+      },
+      {
         "command": "craftlens.designAudit",
         "title": "CraftLens: Design Audit",
         "category": "CraftLens"
@@ -255,6 +302,54 @@
         "command": "craftlens.recommendedSkills",
         "title": "CraftLens: Recommended Tools & Skills",
         "category": "CraftLens"
+      },
+      {
+        "command": "craftlens.showProjectContext",
+        "title": "CraftLens: Show Project Context",
+        "category": "CraftLens",
+        "icon": "$(info)"
+      },
+      {
+        "command": "craftlens.createChangePlan",
+        "title": "CraftLens: Create Improvement Plan",
+        "category": "CraftLens",
+        "icon": "$(add)"
+      },
+      {
+        "command": "craftlens.reviewChangePlan",
+        "title": "CraftLens: Review Proposed Changes",
+        "category": "CraftLens",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "craftlens.approveChange",
+        "title": "CraftLens: Approve Proposed Change",
+        "category": "CraftLens",
+        "icon": "$(check)"
+      },
+      {
+        "command": "craftlens.rejectChange",
+        "title": "CraftLens: Reject Proposed Change",
+        "category": "CraftLens",
+        "icon": "$(close)"
+      },
+      {
+        "command": "craftlens.applyChange",
+        "title": "CraftLens: Apply Approved Changes",
+        "category": "CraftLens",
+        "icon": "$(play)"
+      },
+      {
+        "command": "craftlens.verifyChange",
+        "title": "CraftLens: Verify Applied Changes",
+        "category": "CraftLens",
+        "icon": "$(pass)"
+      },
+      {
+        "command": "craftlens.revertChange",
+        "title": "CraftLens: Revert Applied Change",
+        "category": "CraftLens",
+        "icon": "$(discard)"
       }
     ],
     "viewsContainers": {
@@ -312,14 +407,9 @@
           "group": "navigation@3"
         },
         {
-          "command": "craftlens.openMasterChecklist",
-          "when": "view == craftlens.sidebar",
-          "group": "navigation@4"
-        },
-        {
           "command": "craftlens.refreshSidebar",
           "when": "view == craftlens.sidebar",
-          "group": "navigation@5"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -430,7 +520,7 @@
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "watch": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
     "package": "node ../../scripts/package-extension.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "@craftlens/config": "*",

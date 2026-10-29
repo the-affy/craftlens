@@ -1,7 +1,35 @@
+# Dependencies
 node_modules/
+
+# Build and compilation outputs
 dist/
 out/
-*.vsix
-.DS_Store
 *.tsbuildinfo
+
+# Extension package artifacts
+*.vsix
+
+# Environment & credentials
+.env
+.env.*
+.env.local
+
+# Operating system & editor files
+.DS_Store
+Thumbs.db
+*.log
+.vscode-test/
+
+# Testing & coverage
+coverage/
+.cache/
+.tmp/
+scratch/
 .system_generated/
+
+# CraftLens local workspace runtime artifacts
+.craftlens/*.json
+.craftlens/*.md
+!.craftlens/config.json
+!.craftlens/skills/
+!.craftlens/rules/

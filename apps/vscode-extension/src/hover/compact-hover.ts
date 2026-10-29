@@ -72,12 +72,15 @@ export function createCompactFindingHover(finding: Finding, documentUri?: vscode
   const suggestArgs = encodeURIComponent(JSON.stringify([targetId, documentUri?.toString()]));
   md.appendMarkdown(`[ Suggest Better Design ](command:craftlens.suggestBetterDesign?${suggestArgs})`);
 
-  if (finding.fix || finding.designFix) {
+  if (finding.suggestions && finding.suggestions.length > 0 && finding.suggestions[0].replacement) {
+    const applyArgs = encodeURIComponent(JSON.stringify([targetId, 0]));
+    md.appendMarkdown(`  |  [ Suggested Fix ](command:craftlens.applySuggestion?${applyArgs})`);
+  } else if (finding.fix || finding.designFix) {
     const fixArgs = encodeURIComponent(JSON.stringify([documentUri?.toString(), targetId]));
-    md.appendMarkdown(`  |  [ Preview Fix ](command:craftlens.previewDesignFix?${fixArgs})`);
+    md.appendMarkdown(`  |  [ Suggested Fix ](command:craftlens.applyQuickFix?${fixArgs})  |  [ Preview Fix ](command:craftlens.previewDesignFix?${fixArgs})`);
   }
 
-  md.appendMarkdown(`  |  [ Dismiss ](command:craftlens.rejectFinding?${encodeURIComponent(JSON.stringify([targetId]))})`);
+  md.appendMarkdown(`  |  [ Reject ](command:craftlens.rejectFinding?${encodeURIComponent(JSON.stringify([targetId]))})`);
 
   return md;
 }

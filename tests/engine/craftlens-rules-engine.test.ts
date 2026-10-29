@@ -20,7 +20,7 @@ describe('CraftLensRulesEngine (Canonical Engine Architecture)', () => {
     engine.getSkillManager().initBuiltinSkills(registry.getAllRules());
 
     const skills = engine.getSkills();
-    expect(skills.length).toBe(9);
+    expect(skills.length).toBe(10);
 
     const rules = engine.getRules();
     expect(rules.length).toBeGreaterThan(30);

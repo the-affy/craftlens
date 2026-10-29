@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as vscode from 'vscode';
 
 vi.mock('vscode', () => {
   return {
@@ -216,10 +217,13 @@ describe('VS Code Extension: Skill Manager UI & Rule Explorer Integration (Secti
     expect(renderedHtml).toContain('checklist-container');
     expect(renderedHtml).toContain('checklist-heading');
     expect(renderedHtml).toContain('View checklist.md');
+    expect(renderedHtml).toContain('issues.md');
+    expect(renderedHtml).toContain('suggestions.md');
+    expect(renderedHtml).toContain('changes.md');
     expect(renderedHtml).toContain('checklist-checkbox');
   });
 
-  it('renders Metrics tab with health grade, audit level selector, and suppressions', () => {
+  it('renders Metrics tab with health grade, audit level selector, and living documents', () => {
     let renderedHtml = '';
     let messageHandler: ((msg: any) => Promise<void>) | undefined;
 
@@ -251,6 +255,38 @@ describe('VS Code Extension: Skill Manager UI & Rule Explorer Integration (Secti
     expect(renderedHtml).toContain('HARD');
     expect(renderedHtml).toContain('STRICT');
     expect(renderedHtml).toContain('Auto-Audit on Save & Change');
+    expect(renderedHtml).toContain('Living Project Documents');
+    expect(renderedHtml).toContain('View issues.md');
+    expect(renderedHtml).toContain('View suggestions.md');
+    expect(renderedHtml).toContain('View changes.md');
+  });
+
+  it('dispatches open commands for issues.md, suggestions.md, and changes.md on webview messages', async () => {
+    let messageHandler: ((msg: any) => Promise<void>) | undefined;
+    const mockWebviewView: any = {
+      webview: {
+        options: {},
+        onDidReceiveMessage: (handler: any) => {
+          messageHandler = handler;
+          return { dispose: () => {} };
+        },
+        set html(val: string) {},
+        get html() {
+          return '';
+        },
+      },
+    };
+
+    sidebarProvider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+
+    await messageHandler?.({ type: 'openIssuesFile' });
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('craftlens.openIssuesFile');
+
+    await messageHandler?.({ type: 'openSuggestionsFile' });
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('craftlens.openSuggestionsFile');
+
+    await messageHandler?.({ type: 'openChangesFile' });
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('craftlens.openChangesFile');
   });
 
   it('supports filtering sidebar findings and active filter notification', () => {

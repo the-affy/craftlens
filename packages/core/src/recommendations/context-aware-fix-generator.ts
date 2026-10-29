@@ -17,10 +17,62 @@ export class ContextAwareFixGenerator {
     const tokenMap = projectContext?.learnedConventions?.colorMap || {};
     const preferredComps = projectContext?.learnedConventions?.preferredComponents || {};
 
+    const hexMatch = snippet.match(/#([0-9a-fA-F]{3,8})\b/) || finding.message.match(/#([0-9a-fA-F]{3,8})\b/);
+    const isColorFinding = Boolean(
+      hexMatch &&
+      (/color|hex/i.test(finding.message) || /color|hex/i.test(finding.title || '') || /color|hex/i.test(finding.problemTitle || '') || ruleId.includes('COLOR')) &&
+      !/gradient pattern/i.test(finding.title || '') &&
+      !/gradient pattern/i.test(finding.message || '')
+    );
+
+    // ─────────────────────────────────────────────────────────────
+    // 0. AI Gradient Pattern Detected
+    // ─────────────────────────────────────────────────────────────
+    if (!isColorFinding && (/gradient/i.test(finding.message) || /gradient/i.test(finding.title || '') || /gradient/i.test(finding.problemTitle || '') || /gradient/i.test(snippet))) {
+      const surfaceToken = projectContext?.learnedConventions?.colorMap?.['background'] || 'var(--surface-raised, #1e293b)';
+      const isLinearGrad = snippet.includes('linear-gradient');
+      const isTailwindGrad = /bg-gradient-to-[a-z]+/.test(snippet);
+      const replacement = isLinearGrad ? surfaceToken : isTailwindGrad ? 'bg-slate-900 border border-slate-800' : surfaceToken;
+
+      suggestions.push({
+        id: `sug_${finding.id || ruleId}_1`,
+        title: 'Replace generic gradient with grounded surface',
+        explanation: "Replace the decorative gradient with the project's existing surface/background treatment.",
+        type: 'autofix',
+        confidence: 0.95,
+        safe: true,
+        actionLabel: 'Apply Fix',
+        replacement: replacement,
+        previewDiff: snippet ? `- ${snippet}\n+ ${replacement}` : `+ ${replacement}`,
+      });
+
+      suggestions.push({
+        id: `sug_${finding.id || ruleId}_2`,
+        title: 'Grounded neutral card surface',
+        explanation: 'Uses a subtle border and solid background to reserve color for interactive calls-to-action.',
+        type: 'replace',
+        confidence: 0.88,
+        safe: false,
+        actionLabel: 'Replace',
+        replacement: 'bg-card text-card-foreground',
+      });
+
+      suggestions.push({
+        id: `sug_${finding.id || ruleId}_3`,
+        title: 'Keep gradient if intentional hero artwork',
+        explanation: 'Valid if this container is a top-level marketing hero banner.',
+        type: 'manual',
+        confidence: 0.70,
+        safe: false,
+        actionLabel: 'Keep value',
+      });
+
+      return suggestions.slice(0, 3);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // 1. Hard-coded Colors (Section 2 & 20)
     // ─────────────────────────────────────────────────────────────
-    const hexMatch = snippet.match(/#([0-9a-fA-F]{3,8})\b/) || finding.message.match(/#([0-9a-fA-F]{3,8})\b/);
     if (hexMatch || ruleId === 'UI-006' || ruleId === 'UI-009' || ruleId === 'CP-008') {
       const hex = hexMatch ? `#${hexMatch[1]}` : '#6B7280';
       const normalizedHex = hex.toLowerCase();
@@ -57,28 +109,30 @@ export class ContextAwareFixGenerator {
           previewDiff: `- text-[${hex}]\n+ text-muted-foreground`,
         });
       } else {
+        // If inside a CSS property value or gradient, the in-place replacement must be a token reference, never a declaration with a semicolon
+        const inPlaceReplacement = 'var(--color-accent)';
+
         suggestions.push({
           id: `sug_${finding.id || ruleId}_1`,
-          title: `Create a semantic color variable for ${hex}`,
-          explanation: 'Declares this color in the root stylesheet so all views share the single source of truth.',
-          type: 'insert',
+          title: `Use color token var(--color-accent)`,
+          explanation: `Replaces hardcoded ${hex} with a design token reference. Define --color-accent in :root to maintain a single source of truth.`,
+          type: 'autofix',
           confidence: 0.85,
-          safe: false,
-          actionLabel: 'Insert',
-          replacement: `--color-accent: ${hex};`,
-          previewDiff: `+ --color-accent: ${hex};`,
+          safe: true,
+          actionLabel: 'Apply',
+          replacement: inPlaceReplacement,
+          previewDiff: `- ${hex}\n+ ${inPlaceReplacement}`,
         });
       }
 
       suggestions.push({
         id: `sug_${finding.id || ruleId}_2`,
         title: `Extract ${hex} into theme color variable`,
-        explanation: 'Enables dark mode switching and consistent visual brand palette across components.',
-        type: 'insert',
+        explanation: 'Enables dark mode switching and consistent visual brand palette across components. Define in :root.',
+        type: 'manual',
         confidence: 0.80,
         safe: false,
-        actionLabel: 'Insert',
-        replacement: `--theme-color: ${hex};`,
+        actionLabel: 'Keep value',
       });
 
       suggestions.push({
@@ -140,31 +194,19 @@ export class ContextAwareFixGenerator {
     // ─────────────────────────────────────────────────────────────
     // 3. Repeated Card Styling (Section 2)
     // ─────────────────────────────────────────────────────────────
-    if (ruleId === 'CP-007' || ruleId === 'UI-015' || /repeated card|card layout|duplicated styling/i.test(finding.message)) {
+    if (ruleId === 'CP-007' || ruleId === 'UI-015' || /repeated card|card layout|duplicated styling/i.test(finding.message) || /repeated card/i.test(finding.title || '') || /repeated card/i.test(finding.problemTitle || '')) {
       const cardComponent = preferredComps['card'] || 'Card';
       const hasDiscoveredCard = !!preferredComps['card'];
 
-      if (hasDiscoveredCard) {
-        suggestions.push({
-          id: `sug_${finding.id || ruleId}_1`,
-          title: `Use existing <${cardComponent}> component`,
-          explanation: `Consolidates this structure with the project's existing ${cardComponent} component.`,
-          type: 'refactor',
-          confidence: 0.92,
-          safe: false,
-          actionLabel: 'Replace',
-        });
-      } else {
-        suggestions.push({
-          id: `sug_${finding.id || ruleId}_1`,
-          title: 'Extract into reusable <Card> component',
-          explanation: 'Centralizes border-radius, background, and padding to avoid repeating card boilerplate.',
-          type: 'refactor',
-          confidence: 0.89,
-          safe: false,
-          actionLabel: 'Open suggestion',
-        });
-      }
+      suggestions.push({
+        id: `sug_${finding.id || ruleId}_1`,
+        title: hasDiscoveredCard ? `Use existing <${cardComponent}> component` : `Normalize card spacing using <${cardComponent}> component`,
+        explanation: 'Normalize card spacing using the existing card component and project spacing token.',
+        type: 'refactor',
+        confidence: 0.92,
+        safe: false,
+        actionLabel: 'Suggested Fix',
+      });
 
       suggestions.push({
         id: `sug_${finding.id || ruleId}_2`,
@@ -189,6 +231,7 @@ export class ContextAwareFixGenerator {
 
       return suggestions.slice(0, 3);
     }
+
 
     // ─────────────────────────────────────────────────────────────
     // 4. Exception Swallowing (AP-008, CD-001)
@@ -264,6 +307,33 @@ export class ContextAwareFixGenerator {
         safe: false,
         actionLabel: 'Insert',
         replacement: '// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped third-party response',
+      });
+
+      return suggestions.slice(0, 3);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 5b. Missing Authorization Check / Security
+    // ─────────────────────────────────────────────────────────────
+    if (ruleId === 'SEC-B01' || ruleId.startsWith('SEC-') || /authorization|idor|ownership/i.test(finding.message) || /authorization/i.test(finding.title || '') || /authorization/i.test(finding.problemTitle || '')) {
+      suggestions.push({
+        id: `sug_${finding.id || ruleId}_1`,
+        title: 'Add authorization middleware check',
+        explanation: 'Add the existing authorization middleware/policy check used by sibling API routes.',
+        type: 'manual',
+        confidence: 0.94,
+        safe: false,
+        actionLabel: 'Manual fix',
+      });
+
+      suggestions.push({
+        id: `sug_${finding.id || ruleId}_2`,
+        title: 'Scope query to authenticated caller',
+        explanation: 'Enforces session.userId or tenant isolation in the data query.',
+        type: 'manual',
+        confidence: 0.88,
+        safe: false,
+        actionLabel: 'Manual fix',
       });
 
       return suggestions.slice(0, 3);

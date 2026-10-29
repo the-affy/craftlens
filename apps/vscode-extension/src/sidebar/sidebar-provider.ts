@@ -27,6 +27,7 @@ import {
   Skill,
   SkillDiscoveryService,
   ECOSYSTEM_SKILLS,
+  ContextAwareFixGenerator,
 } from '@craftlens/core';
 import { ConfigurationManager } from '../configuration/config-manager.js';
 import { RuleEngine } from '@craftlens/rule-engine';
@@ -48,7 +49,7 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
   private disposables: vscode.Disposable[] = [];
   private viewDisposables: vscode.Disposable[] = [];
   private recommendationEngine: RecommendationEngine;
-  private expandedCategories: Set<string> = new Set(['ui-ux', 'content', 'code', 'code-quality', 'security', 'accessibility', 'performance']);
+  private expandedCategories: Set<string> = new Set(['ui-ux', 'security', 'performance', 'accessibility', 'backend', 'content', 'code', 'code-quality', 'dependencies']);
   private expandedFindingIds: Set<string> = new Set();
   private selectedFindingId: string | null = null;
   private expandedChecklistCriterionId: string | null = null;
@@ -95,6 +96,22 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
       this.refresh();
     });
     this.disposables.push({ dispose: unsubStore });
+
+    const unsubSelection = this.findingStore.onDidSelectIssue((issueId) => {
+      if (this.selectedFindingId !== issueId) {
+        this.selectedFindingId = issueId;
+        if (issueId) {
+          this.expandedFindingIds.add(issueId);
+          const f = this.findingStore.getFindingById(issueId);
+          if (f?.category) {
+            this.expandedCategories.add(f.category);
+          }
+        }
+        this._view?.webview.postMessage({ type: 'highlightFinding', findingId: issueId });
+        this.updateHtml();
+      }
+    });
+    this.disposables.push({ dispose: unsubSelection });
 
     const unsubConfig = this.configManager.onDidChange(() => {
       this.refresh();
@@ -286,8 +303,7 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
             } else {
               this.expandedFindingIds.add(message.findingId);
             }
-            this.selectedFindingId = message.findingId;
-            this.updateHtml();
+            this.findingStore.setSelectedIssueId(message.findingId);
           }
           break;
 
@@ -360,7 +376,7 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
 
         case 'openInstance':
           if (message.findingId) {
-            this.selectedFindingId = message.findingId;
+            this.findingStore.setSelectedIssueId(message.findingId);
             const target = this.findingStore.getFindingById(message.findingId) || message.findingId;
             await vscode.commands.executeCommand(
               'craftlens.openFindingLocation',
@@ -405,15 +421,64 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
           }
           break;
 
+        case 'applySuggestedFix':
+          if (message.findingId) {
+            const rawFinding = this.findingStore.getFindingById(message.findingId) ||
+              this.findingStore.getAllFindings().find(f => f.id === message.findingId || f.ruleId === message.findingId || f.fingerprint === message.findingId);
+            if (rawFinding) {
+              if (rawFinding.suggestions && rawFinding.suggestions.length > 0) {
+                await vscode.commands.executeCommand('craftlens.applySuggestion', rawFinding.id || message.findingId, 0);
+              } else if (rawFinding.designFix || rawFinding.fix) {
+                const docUri = vscode.Uri.file(rawFinding.location?.filePath || rawFinding.filePath || '');
+                await vscode.commands.executeCommand('craftlens.applyQuickFix', docUri, rawFinding);
+              } else if (rawFinding.recommendations && rawFinding.recommendations.length > 0) {
+                await vscode.commands.executeCommand('craftlens.applyRecommendation', rawFinding, rawFinding.recommendations[0]);
+              } else {
+                await vscode.commands.executeCommand('craftlens.applySuggestion', rawFinding.id || message.findingId, 0);
+              }
+            } else {
+              await vscode.commands.executeCommand('craftlens.applySuggestion', message.findingId, 0);
+            }
+          }
+          break;
+
+        case 'showManualFix':
+          if (message.findingId) {
+            const rawFinding = this.findingStore.getFindingById(message.findingId) ||
+              this.findingStore.getAllFindings().find(f => f.id === message.findingId || f.ruleId === message.findingId || f.fingerprint === message.findingId);
+            if (rawFinding) {
+              const guide = rawFinding.suggestions?.[0]?.explanation ||
+                            rawFinding.recommendations?.[0]?.description ||
+                            rawFinding.howToFix ||
+                            rawFinding.description ||
+                            'Manual remediation: Follow project design tokens and conventions.';
+              vscode.window.showInformationMessage(`CraftLens Manual Fix: ${guide}`);
+              await vscode.commands.executeCommand('craftlens.showFindingDetail', rawFinding);
+            }
+          }
+          break;
+
+        case 'showFindingDetail':
+          if (message.findingId) {
+            this.findingStore.setSelectedIssueId(message.findingId);
+            const rawFinding = this.findingStore.getFindingById(message.findingId) ||
+              this.findingStore.getAllFindings().find(f => f.id === message.findingId || f.ruleId === message.findingId || f.fingerprint === message.findingId);
+            if (rawFinding) {
+              await vscode.commands.executeCommand('craftlens.showFindingDetail', rawFinding);
+            }
+          }
+          break;
+
         case 'rejectFinding':
           if (message.findingId) {
-            const rawFinding = this.findingStore.getFindingById(message.findingId);
+            const rawFinding = this.findingStore.getFindingById(message.findingId) ||
+              this.findingStore.getAllFindings().find(f => f.id === message.findingId || f.ruleId === message.findingId || f.fingerprint === message.findingId);
             await vscode.commands.executeCommand('craftlens.rejectFinding', rawFinding || message.findingId);
           }
           break;
 
         case 'runAudit':
-          await vscode.commands.executeCommand('craftlens.scanCurrentFile');
+          await vscode.commands.executeCommand('craftlens.runAudit');
           break;
 
         case 'toggleSkill': {
@@ -543,8 +608,28 @@ export class CraftLensSidebarProvider implements vscode.WebviewViewProvider, vsc
           this.updateHtml();
           break;
 
+        case 'openMasterChecklist':
         case 'openChecklist':
           await vscode.commands.executeCommand('craftlens.openMasterChecklist');
+          break;
+
+        case 'openIssuesFile':
+        case 'openIssuesDoc':
+        case 'openProblemsFile':
+        case 'openProblemsDoc':
+          await vscode.commands.executeCommand('craftlens.openIssuesFile');
+          break;
+
+        case 'openSuggestionsFile':
+        case 'openSuggestionsDoc':
+        case 'openSuggestionFile':
+        case 'openSuggestionDoc':
+          await vscode.commands.executeCommand('craftlens.openSuggestionsFile');
+          break;
+
+        case 'openChangesFile':
+        case 'openChangesDoc':
+          await vscode.commands.executeCommand('craftlens.openChangesFile');
           break;
 
         case 'toggleChecklistCriterion':
@@ -592,13 +677,7 @@ public refresh(): void {
 }
 
 public setSelectedFinding(id: string | null): void {
-  this.selectedFindingId = id;
-  if (id) {
-    this.expandedFindingIds.add(id);
-  }
-  if (this._view) {
-    this.updateHtml();
-  }
+  this.findingStore.setSelectedIssueId(id);
 }
 
 private updateHtml(): void {
@@ -680,25 +759,26 @@ private updateHtml(): void {
   <title>CraftLens</title>
   <style>
     :root {
-      --bg: var(--vscode-sideBar-background, #18181b);
-      --fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #cccccc));
-      --header-fg: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground, #ffffff));
-      --muted: var(--vscode-descriptionForeground, #858585);
-      --border: var(--vscode-sideBar-border, var(--vscode-panel-border, #27272a));
-      --border-subtle: var(--vscode-sideBar-border, var(--vscode-panel-border, #27272a));
-      --surface: var(--vscode-editor-background, #18181b);
-      --surface-raised: var(--vscode-input-background, #202024);
-      --surface-hover: var(--vscode-list-hoverBackground, #2a2d2e);
+      --bg: var(--vscode-sideBar-background);
+      --fg: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+      --header-fg: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+      --muted: var(--vscode-descriptionForeground);
+      --border: var(--vscode-sideBar-border, var(--vscode-panel-border));
+      --border-subtle: var(--vscode-sideBar-border, var(--vscode-panel-border));
+      --surface: var(--vscode-editor-background);
+      --surface-raised: var(--vscode-input-background);
+      --surface-hover: var(--vscode-list-hoverBackground);
       --font-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
       --radius-sm: 2px;
       --radius-md: 3px;
       --control-height: 24px;
 
-      /* Semantic Severities (Section 1) */
-      --sev-error: #ef4444;
-      --sev-warning: #eab308;
-      --sev-moderate: #f97316;
-      --sev-info: #94a3b8;
+      /* Semantic Severities (UX Approved & WCAG AA Accessible Theme Adapting) */
+      --sev-error: var(--vscode-errorForeground, var(--vscode-editorError-foreground));
+      --sev-warning: var(--vscode-editorWarning-foreground, var(--vscode-charts-orange));
+      --sev-moderate: var(--vscode-charts-orange, var(--vscode-editorWarning-foreground));
+      --sev-info: var(--vscode-editorInfo-foreground);
+      --status-success: var(--vscode-testing-iconPassed, var(--vscode-charts-green, currentColor));
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -752,57 +832,120 @@ private updateHtml(): void {
     /* Live Dashboard (3 Compact Cards) */
     .dashboard-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 5px;
       margin: 8px 0 8px;
+      min-width: 0;
+    }
+    @media (max-width: 260px) {
+      .dashboard-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .dashboard-card[data-card="checklist"] {
+        grid-column: 1 / -1;
+      }
+    }
+    @media (max-width: 170px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      .dashboard-card[data-card="checklist"] {
+        grid-column: auto;
+      }
     }
     .dashboard-card {
-      background: var(--surface-raised, #202024);
-      border: 1px solid var(--border-subtle, #27272a);
+      background: var(--surface-raised);
+      border: 1px solid var(--border-subtle);
       border-radius: var(--radius-sm, 2px);
       padding: 6px 4px 5px;
       text-align: center;
       cursor: pointer;
       user-select: none;
       transition: background 0.12s ease, border-color 0.12s ease;
+      min-width: 0;
+      box-sizing: border-box;
     }
     .dashboard-card:hover {
-      background: var(--surface-hover, #2a2d2e);
+      background: var(--surface-hover);
       border-color: var(--vscode-focusBorder, var(--border));
+    }
+    .dashboard-card:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 1px;
     }
     .dashboard-card-val {
       font-size: 18px;
       font-weight: 700;
       line-height: 1.1;
       font-family: var(--font-mono);
-      color: var(--header-fg, #ffffff);
+      color: var(--header-fg);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .dashboard-card-label {
       font-size: 9.5px;
       font-weight: 500;
-      color: var(--muted, #858585);
+      color: var(--muted);
       margin-top: 3px;
       line-height: 1.2;
       white-space: nowrap;
+    }  overflow: hidden;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .top-toolbar {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .top-icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: var(--radius-sm, 2px);
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    .top-icon-btn:hover {
+      background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.12));
+      color: var(--vscode-button-foreground, currentColor);
+    }
+    .top-icon-btn:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, var(--focus));
+      outline-offset: 1px;
     }
     .project-overview-btn {
       display: inline-flex;
       align-items: center;
       gap: 3px;
-      padding: 2px 7px;
+      height: 22px;
+      padding: 0 7px;
       font-size: 10px;
       font-weight: 600;
       border-radius: var(--radius-sm, 2px);
-      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
-      color: var(--vscode-button-secondaryForeground, var(--fg));
-      border: 1px solid var(--vscode-button-border, var(--border));
+      background: var(--vscode-button-background, transparent);
+      color: var(--vscode-button-foreground, currentColor);
+      border: 1px solid var(--vscode-button-border, transparent);
       cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
     }
     .project-overview-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
-      color: var(--vscode-button-foreground, #ffffff);
+      background: var(--vscode-button-hoverBackground, transparent);
+      color: var(--vscode-button-foreground, currentColor);
+    }
+    .project-overview-btn:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, var(--focus));
+      outline-offset: 1px;
     }
 
     /* Rule Sources Selector (Section 5 & 9) */
@@ -834,10 +977,57 @@ private updateHtml(): void {
       background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
     }
     .rule-mode-btn.active {
-      background: var(--vscode-button-background, #0e639c);
-      color: var(--vscode-button-foreground, #ffffff);
+      background: var(--vscode-button-background, var(--primary));
+      color: var(--vscode-button-foreground, currentColor);
       border-color: transparent;
       font-weight: 600;
+    }
+
+    /* Living Documents Links Bar */
+    .docs-links-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 10px;
+      flex-wrap: wrap;
+    }
+    .docs-bar-label {
+      color: var(--muted);
+      font-weight: 600;
+      margin-right: 2px;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+    }
+    .doc-link-chip {
+      padding: 2px 6px;
+      font-size: 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      border: 1px solid var(--vscode-button-border, var(--border));
+      color: var(--vscode-button-secondaryForeground, var(--fg));
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      line-height: 1.3;
+      font-weight: 500;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .doc-link-chip:hover {
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      border-color: var(--vscode-focusBorder, var(--focus));
+      color: var(--header-fg);
+    }
+    .doc-links-group {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      align-items: center;
     }
 
     /* Semantic Severity Bar (Section 1) */
@@ -888,9 +1078,10 @@ private updateHtml(): void {
       gap: 4px;
     }
     .nav-btn:hover { color: var(--fg); }
+    .nav-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--focus)); outline-offset: -2px; }
     .nav-btn.active {
       color: var(--header-fg);
-      border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--vscode-activityBar-foreground, #007acc));
+      border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--vscode-activityBar-foreground, var(--focus)));
     }
     .nav-count {
       font-family: var(--font-mono);
@@ -908,7 +1099,7 @@ private updateHtml(): void {
     .search-input {
       width: 100%;
       padding: 3px 6px;
-      background: var(--vscode-input-background, #1e1e1e);
+      background: var(--vscode-input-background, var(--surface));
       border: 1px solid var(--vscode-input-border, var(--border));
       border-radius: var(--radius-sm);
       color: var(--vscode-input-foreground, var(--fg));
@@ -916,7 +1107,9 @@ private updateHtml(): void {
       margin-bottom: 6px;
       outline: none;
     }
-    .search-input:focus { border-color: var(--vscode-focusBorder, #007acc); }
+    .search-input:focus { border-color: var(--vscode-focusBorder, var(--focus)); }
+    .search-input::placeholder { color: var(--vscode-input-placeholderForeground, var(--muted)); }
+    .search-input:focus, .search-input:focus-visible { border-color: var(--vscode-focusBorder, var(--focus)); outline: 1px solid var(--vscode-focusBorder, var(--focus)); }
     .quick-filters {
       display: flex;
       flex-wrap: wrap;
@@ -932,20 +1125,29 @@ private updateHtml(): void {
       color: var(--muted);
     }
     .filter-tag:hover { color: var(--fg); background: var(--surface-hover); }
+    .filter-tag:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--focus)); outline-offset: 1px; }
     .filter-tag.active {
-      background: var(--vscode-list-activeSelectionBackground, #04395e);
-      color: var(--vscode-list-activeSelectionForeground, #ffffff);
-      border-color: var(--vscode-focusBorder, #007acc);
+      background: var(--vscode-list-activeSelectionBackground, var(--surface-hover));
+      color: var(--vscode-list-activeSelectionForeground, currentColor);
+      border-color: var(--vscode-focusBorder, var(--focus));
       font-weight: 600;
     }
 
     /* Finding Row & Section Structure */
-    .cat-group { margin-bottom: 1px; }
+    .cat-group {
+      margin-bottom: 2px;
+    }
+    .cat-group.collapsed .cat-body {
+      display: none !important;
+    }
+    .cat-group.collapsed .security-empty-state {
+      display: none !important;
+    }
     .cat-header {
-      padding: 4px 12px;
+      padding: 6px 12px;
       background: var(--surface);
       border-bottom: 1px solid var(--border-subtle);
-      font-size: 10px;
+      font-size: 10.5px;
       font-weight: 700;
       text-transform: uppercase;
       color: var(--muted);
@@ -953,9 +1155,28 @@ private updateHtml(): void {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      user-select: none;
+      min-height: 28px;
+      box-sizing: border-box;
+      transition: background 0.1s ease, color 0.1s ease;
+    }
+    .cat-header:hover {
+      background: var(--surface-hover);
+      color: var(--header-fg);
+    }
+    .cat-header:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, var(--focus));
+      outline-offset: -1px;
+    }
+    .cat-header-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      line-height: 1;
+      height: 100%;
     }
     .finding-card {
-      padding: 6px 12px;
+      padding: 8px 12px;
       border-bottom: 1px solid var(--border-subtle);
       background: var(--bg);
       transition: background 0.1s ease;
@@ -963,36 +1184,108 @@ private updateHtml(): void {
     .finding-card:hover { background: var(--surface-hover); }
     .finding-card.selected {
       background: var(--surface-raised);
-      border-left: 2px solid var(--vscode-focusBorder, #007acc);
+      border-left: 2px solid var(--vscode-focusBorder, var(--focus));
+    }
+    .finding-card.fixing, .finding-card.card-processing {
+      opacity: 0.85;
+    }
+    .finding-card.fixing .fix-action-btn, .finding-card.card-processing .fix-action-btn {
+      cursor: wait;
     }
 
-    /* Requirement 5 Hierarchy: [SEVERITY] -> Title -> Supporting Info */
-    .finding-header-row {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 2px;
-      cursor: pointer;
-      margin-bottom: 3px;
-    }
-    .finding-sev-row {
+    .finding-label-row {
       display: flex;
       align-items: center;
-      margin-bottom: 1px;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 3px;
     }
     .finding-title-row {
       display: flex;
       align-items: baseline;
       width: 100%;
+      cursor: pointer;
+      margin-bottom: 3px;
     }
     .finding-title-text {
       font-size: 11.5px;
       font-weight: 600;
       color: var(--header-fg);
       line-height: 1.35;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
-    .finding-support-info {
-      margin-top: 2px;
+    .finding--error .finding-title-text,
+    .finding--critical .finding-title-text,
+    .finding--security .finding-title-text,
+    .finding-title-text.sev-title--error,
+    .finding-title-text.sev-title--critical,
+    .finding-title-text.sev-title--security {
+      color: var(--sev-error, var(--status-error));
+    }
+    .finding--warning .finding-title-text,
+    .finding-title-text.sev-title--warning {
+      color: var(--sev-warning, var(--status-warning));
+    }
+    .finding--moderate .finding-title-text,
+    .finding-title-text.sev-title--moderate,
+    .finding-title-text.sev-title--medium {
+      color: var(--sev-moderate, var(--status-warning));
+    }
+    .finding--suggestion .finding-title-text,
+    .finding--info .finding-title-text,
+    .finding--low .finding-title-text,
+    .finding-title-text.sev-title--suggestion,
+    .finding-title-text.sev-title--info,
+    .finding-title-text.sev-title--low {
+      color: var(--sev-info, var(--color-accent));
+    }
+    .finding-short-desc {
+      font-size: 10.5px;
+      color: var(--muted);
+      line-height: 1.35;
+      margin-bottom: 6px;
+    }
+    .finding-fix-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 5px;
+      font-size: 10.5px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .fix-preview-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      color: var(--header-fg);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .fix-preview-text {
+      color: var(--fg);
+      opacity: 0.95;
+    }
+    .finding-actions-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .fix-action-btn {
+      font-weight: 600;
+      font-size: 10.5px;
+      padding: 3px 9px;
+      border-radius: var(--radius-sm, 2px);
+    }
+    .fix-action-btn.disabled, .fix-action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .reject-action-btn {
+      font-size: 10.5px;
+      padding: 3px 8px;
     }
     .finding-instance-count-label {
       font-size: 10px;
@@ -1001,7 +1294,8 @@ private updateHtml(): void {
       font-family: var(--font-mono, monospace);
     }
     .finding-location-single {
-      margin-bottom: 3px;
+      display: inline-flex;
+      align-items: center;
     }
     .instance-row {
       display: flex;
@@ -1027,30 +1321,46 @@ private updateHtml(): void {
       font-size: 9px;
       font-weight: 700;
       letter-spacing: 0.05em;
-      padding: 1px 5px;
-      border-radius: var(--radius-sm);
+      padding: 1px 6px;
+      border-radius: var(--radius-sm, 2px);
       flex-shrink: 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       line-height: 1.2;
     }
-    .sev-badge.error { background: rgba(239, 68, 68, 0.18); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
-    .sev-badge.warning { background: rgba(234, 179, 8, 0.18); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4); }
-    .sev-badge.moderate { background: rgba(249, 115, 22, 0.18); color: #f97316; border: 1px solid rgba(249, 115, 22, 0.4); }
-    .sev-badge.info { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+    .sev-badge.error, .sev-badge.critical, .sev-badge.security {
+      background: rgba(239, 68, 68, 0.16);
+      color: var(--sev-error, var(--status-error));
+      border: 1px solid rgba(248, 113, 113, 0.4);
+    }
+    .sev-badge.warning {
+      background: rgba(249, 115, 22, 0.16);
+      color: var(--sev-warning, var(--status-warning));
+      border: 1px solid rgba(251, 146, 60, 0.4);
+    }
+    .sev-badge.moderate, .sev-badge.medium {
+      background: rgba(249, 115, 22, 0.16);
+      color: var(--sev-moderate, var(--status-warning));
+      border: 1px solid rgba(249, 115, 22, 0.4);
+    }
+    .sev-badge.suggestion, .sev-badge.low, .sev-badge.info {
+      background: rgba(234, 179, 8, 0.16);
+      color: var(--sev-info, var(--color-accent));
+      border: 1px solid rgba(234, 179, 8, 0.4);
+    }
 
     .finding-location-link {
       font-family: var(--font-mono);
       font-size: 10.5px;
-      color: var(--vscode-textLink-foreground, #3794ff);
+      color: var(--vscode-textLink-foreground, var(--sev-info));
       cursor: pointer;
       display: inline-block;
       text-decoration: none;
     }
     .finding-location-link:hover {
       text-decoration: underline;
-      color: var(--vscode-textLink-activeForeground, #3794ff);
+      color: var(--vscode-textLink-activeForeground, var(--sev-info));
     }
 
     .code-snippet-box {
@@ -1064,13 +1374,194 @@ private updateHtml(): void {
       margin-bottom: 4px;
       overflow-x: auto;
       white-space: pre;
+      box-sizing: border-box;
+      max-width: 100%;
+    }
+    .finding--error .code-snippet-box,
+    .finding--critical .code-snippet-box,
+    .finding--security .code-snippet-box,
+    .code-snippet-box.snippet--error,
+    .code-snippet-box.snippet--critical,
+    .code-snippet-box.snippet--security {
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      border-left: 3px solid var(--sev-error, var(--status-error));
+      background: rgba(239, 68, 68, 0.06);
+    }
+    .finding--warning .code-snippet-box,
+    .code-snippet-box.snippet--warning {
+      border: 1px solid rgba(249, 115, 22, 0.35);
+      border-left: 3px solid var(--sev-warning, var(--status-warning));
+      background: rgba(249, 115, 22, 0.06);
+    }
+    .finding--moderate .code-snippet-box,
+    .code-snippet-box.snippet--moderate {
+      border: 1px solid rgba(234, 88, 12, 0.35);
+      border-left: 3px solid var(--sev-moderate, var(--status-warning));
+      background: rgba(234, 88, 12, 0.06);
+    }
+    .finding--suggestion .code-snippet-box,
+    .finding--info .code-snippet-box,
+    .finding--low .code-snippet-box,
+    .code-snippet-box.snippet--suggestion,
+    .code-snippet-box.snippet--info,
+    .code-snippet-box.snippet--low {
+      border: 1px dashed rgba(56, 189, 248, 0.35);
+      border-left: 3px solid var(--sev-info, var(--color-accent));
+      background: rgba(56, 189, 248, 0.06);
+    }
+
+    .cat-chevron {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      font-size: 11px;
+      line-height: 1;
+      text-align: center;
+      color: var(--muted);
+      user-select: none;
+      flex-shrink: 0;
+      vertical-align: middle;
+      transform: translateY(-1px);
+      transition: color 0.12s ease;
+    }
+    .cat-header:hover .cat-chevron {
+      color: var(--header-fg);
+    }
+    .cat-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .cat-icon svg {
+      width: 13px;
+      height: 13px;
+      display: block;
+    }
+    .cat-title-text {
+      display: inline-flex;
+      align-items: center;
+      line-height: 1;
+      letter-spacing: 0.3px;
+      vertical-align: middle;
+    }
+    .cat-badge {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--surface-raised, rgba(255, 255, 255, 0.08));
+      color: var(--muted, currentColor);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      line-height: 1.2;
+      box-sizing: border-box;
+    }
+    .cat-sev-pill {
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .cat-sev-pill.cat-sev--critical {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--status-error);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .cat-sev-pill.cat-sev--warning {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--status-warning);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .cat-sev-pill.cat-sev--info {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--color-accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .clickable-title {
+      cursor: pointer;
+      transition: opacity 0.1s ease;
+    }
+    .clickable-title:hover {
+      text-decoration: underline;
+      opacity: 0.9;
+    }
+    .finding-locations-stacked {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin: 2px 0 6px 0;
+      padding-left: 2px;
+    }
+    .stacked-location-item {
+      font-size: 10.5px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .stacked-location-item .finding-location-link {
+      color: var(--link);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .stacked-location-item .finding-location-link:hover {
+      text-decoration: underline;
+    }
+    .clickable-fix-preview {
+      cursor: pointer;
+      padding: 3px 4px;
+      margin: -3px -4px 3px -4px;
+      border-radius: 3px;
+      transition: background 0.12s ease;
+    }
+    .clickable-fix-preview:hover {
+      background: var(--surface-hover, rgba(255, 255, 255, 0.04));
+    }
+    .fix-preview-clickable {
+      color: var(--fg);
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-underline-offset: 3px;
+    }
+    .fix-preview-clickable:hover {
+      color: var(--link);
+      text-decoration: underline;
+    }
+
+    .security-audit-section {
+      margin-top: 4px;
+    }
+    .security-cat-header {
+      border-left: 2px solid var(--sev-error, var(--status-error));
+    }
+    .security-why-matters {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .security-why-matters strong {
+      color: var(--header-fg);
     }
 
     .token-callout {
       padding: 3px 6px;
       background: var(--surface-raised);
       border: 1px solid var(--border);
-      border-left: 2px solid var(--vscode-textLink-foreground, #3794ff);
+      border-left: 2px solid var(--vscode-textLink-foreground, var(--sev-info));
       border-radius: var(--radius-sm);
       font-size: 10px;
       color: var(--fg);
@@ -1130,7 +1621,7 @@ private updateHtml(): void {
     }
     .sug-icon {
       font-size: 11px;
-      color: var(--vscode-textLink-foreground, #3794ff);
+      color: var(--vscode-textLink-foreground, var(--sev-info));
     }
     .sug-why {
       font-size: 10px;
@@ -1140,7 +1631,7 @@ private updateHtml(): void {
     }
     .sug-diff {
       background: var(--surface-raised);
-      border-left: 2px solid var(--vscode-focusBorder, #007acc);
+      border-left: 2px solid var(--vscode-focusBorder, var(--focus));
       padding: 3px 6px;
       font-family: var(--font-mono);
       font-size: 9.5px;
@@ -1162,8 +1653,8 @@ private updateHtml(): void {
       font-weight: 500;
       cursor: pointer;
       border: 1px solid var(--vscode-button-border, transparent);
-      background: var(--vscode-button-secondaryBackground, #313131);
-      color: var(--vscode-button-secondaryForeground, #cccccc);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      color: var(--vscode-button-secondaryForeground, currentColor);
       display: inline-flex;
       align-items: center;
       gap: 4px;
@@ -1171,24 +1662,24 @@ private updateHtml(): void {
       user-select: none;
     }
     .btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
-      color: var(--vscode-button-secondaryForeground, #ffffff);
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      color: var(--vscode-button-secondaryForeground, currentColor);
     }
-    .btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: 1px; }
+    .btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--focus)); outline-offset: 1px; }
     .btn-primary {
-      background: var(--vscode-button-background, #0e639c);
-      color: var(--vscode-button-foreground, #ffffff);
+      background: var(--vscode-button-background, var(--primary));
+      color: var(--vscode-button-foreground, currentColor);
       border-color: var(--vscode-button-border, transparent);
       font-weight: 600;
     }
-    .btn-primary:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+    .btn-primary:hover { background: var(--vscode-button-hoverBackground, var(--surface-hover)); }
     .btn-quiet {
       background: transparent;
       border-color: transparent;
-      color: var(--vscode-foreground, #cccccc);
+      color: var(--vscode-foreground);
     }
     .btn-quiet:hover {
-      color: var(--vscode-foreground, #ffffff);
+      color: var(--vscode-foreground, currentColor);
       background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
     }
 
@@ -1280,7 +1771,7 @@ private updateHtml(): void {
     .skill-conflict-title {
       font-size: 10.5px;
       font-weight: 700;
-      color: #f59e0b;
+      color: var(--sev-warning);
       margin-bottom: 2px;
     }
     .skill-conflict-desc {
@@ -1342,7 +1833,7 @@ private updateHtml(): void {
       appearance: auto;
       -webkit-appearance: auto;
       cursor: pointer;
-      accent-color: var(--vscode-button-background, #0e639c);
+      accent-color: var(--vscode-button-background, var(--primary));
       width: 14px;
       height: 14px;
       margin: 0;
@@ -1410,8 +1901,8 @@ private updateHtml(): void {
       font-weight: 500;
       line-height: 1;
       border: 1px solid var(--vscode-button-border, transparent);
-      background: var(--vscode-button-secondaryBackground, #313131);
-      color: var(--vscode-button-secondaryForeground, #cccccc);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      color: var(--vscode-button-secondaryForeground, currentColor);
       cursor: pointer;
       user-select: none;
       flex-shrink: 0;
@@ -1419,15 +1910,15 @@ private updateHtml(): void {
       vertical-align: middle;
     }
     .skill-icon-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
-      color: var(--vscode-button-secondaryForeground, #ffffff);
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      color: var(--vscode-button-secondaryForeground, currentColor);
     }
     .skill-icon-btn:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline: 1px solid var(--vscode-focusBorder, var(--focus));
       outline-offset: 1px;
     }
     .skill-icon-btn.delete-btn:hover {
-      color: var(--vscode-errorForeground, #ef4444);
+      color: var(--vscode-errorForeground, var(--status-error));
       background: rgba(239, 68, 68, 0.12);
       border-color: rgba(239, 68, 68, 0.35);
     }
@@ -1454,35 +1945,35 @@ private updateHtml(): void {
       vertical-align: middle;
     }
     .btn-skill-action.state-install {
-      background: var(--vscode-button-secondaryBackground, #313131);
-      color: var(--vscode-button-secondaryForeground, #cccccc);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      color: var(--vscode-button-secondaryForeground, currentColor);
       border: 1px solid var(--vscode-button-border, var(--border));
     }
     .btn-skill-action.state-install:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
-      color: var(--vscode-button-secondaryForeground, #ffffff);
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      color: var(--vscode-button-secondaryForeground, currentColor);
     }
     .btn-skill-action.state-installing {
-      background: var(--vscode-button-secondaryBackground, #313131);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
       color: var(--muted);
       cursor: wait;
     }
     .btn-skill-action.state-activate {
-      background: var(--vscode-button-background, #0e639c);
-      color: var(--vscode-button-foreground, #ffffff);
+      background: var(--vscode-button-background, var(--primary));
+      color: var(--vscode-button-foreground, currentColor);
       font-weight: 600;
     }
     .btn-skill-action.state-activate:hover {
-      background: var(--vscode-button-hoverBackground, #1177bb);
+      background: var(--vscode-button-hoverBackground, var(--surface-hover));
     }
     .btn-skill-action.state-active {
       background: transparent;
-      color: var(--vscode-testing-iconPassed, #73c991);
+      color: var(--vscode-testing-iconPassed, var(--status-success));
       border-color: transparent;
     }
     .btn-skill-action.state-update {
-      background: var(--vscode-button-secondaryBackground, #313131);
-      color: var(--vscode-editorWarning-foreground, #cca700);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      color: var(--vscode-editorWarning-foreground, var(--sev-warning));
       border-color: var(--vscode-button-border, transparent);
     }
 
@@ -1501,8 +1992,8 @@ private updateHtml(): void {
       border-radius: var(--radius-sm, 2px);
       line-height: 1;
       border: 1px solid var(--vscode-button-border, transparent);
-      background: var(--vscode-button-secondaryBackground, #313131);
-      color: var(--vscode-button-secondaryForeground, #cccccc);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
+      color: var(--vscode-button-secondaryForeground, currentColor);
       cursor: pointer;
       user-select: none;
       flex-shrink: 0;
@@ -1510,21 +2001,21 @@ private updateHtml(): void {
       vertical-align: middle;
     }
     .btn-control:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
-      color: var(--vscode-button-secondaryForeground, #ffffff);
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      color: var(--vscode-button-secondaryForeground, currentColor);
     }
     .btn-control:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline: 1px solid var(--vscode-focusBorder, var(--focus));
       outline-offset: 1px;
     }
     .btn-control.btn-primary {
-      background: var(--vscode-button-background, #0e639c);
-      color: var(--vscode-button-foreground, #ffffff);
+      background: var(--vscode-button-background, var(--primary));
+      color: var(--vscode-button-foreground, currentColor);
       border-color: transparent;
       font-weight: 600;
     }
     .btn-control.btn-primary:hover {
-      background: var(--vscode-button-hoverBackground, #1177bb);
+      background: var(--vscode-button-hoverBackground, var(--surface-hover));
     }
 
     /* Checklist View */
@@ -1602,14 +2093,14 @@ private updateHtml(): void {
       appearance: auto;
       -webkit-appearance: auto;
       cursor: pointer;
-      accent-color: var(--vscode-button-background, #0e639c);
+      accent-color: var(--vscode-button-background, var(--primary));
       width: 14px;
       height: 14px;
       margin: 0;
       flex-shrink: 0;
     }
     .checklist-checkbox:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline: 1px solid var(--vscode-focusBorder, var(--focus));
       outline-offset: 1px;
     }
     .checklist-item-title {
@@ -1636,13 +2127,13 @@ private updateHtml(): void {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: var(--vscode-editorWarning-foreground, #cca700);
+      color: var(--vscode-editorWarning-foreground, var(--sev-warning));
       flex-shrink: 0;
     }
     .checklist-view-issues-btn {
-      background: var(--vscode-button-secondaryBackground, #313131);
+      background: var(--vscode-button-secondaryBackground, var(--surface-raised));
       border: 1px solid var(--vscode-button-border, transparent);
-      color: var(--vscode-button-secondaryForeground, #cccccc);
+      color: var(--vscode-button-secondaryForeground);
       font-size: 10.5px;
       font-weight: 500;
       padding: 2px 7px;
@@ -1652,8 +2143,8 @@ private updateHtml(): void {
       white-space: nowrap;
     }
     .checklist-view-issues-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
-      color: var(--vscode-button-secondaryForeground, #ffffff);
+      background: var(--vscode-button-secondaryHoverBackground, var(--surface-hover));
+      color: var(--vscode-button-secondaryForeground, currentColor);
     }
 
     /* 4-State checklist styling */
@@ -1665,35 +2156,35 @@ private updateHtml(): void {
     }
 
     .checklist-item-row.state-issues .checklist-item-title {
-      color: var(--vscode-errorForeground, #ef4444);
+      color: var(--vscode-errorForeground, var(--status-error));
     }
     .checklist-item-row.state-issues .checklist-issue-count {
-      color: var(--vscode-errorForeground, #ef4444);
+      color: var(--vscode-errorForeground, var(--status-error));
       font-weight: 600;
     }
     .checklist-item-row.state-issues .checklist-checkbox {
-      accent-color: var(--vscode-errorForeground, #ef4444);
+      accent-color: var(--vscode-errorForeground, var(--status-error));
     }
 
     .checklist-item-row.state-acknowledged .checklist-item-title {
-      color: var(--vscode-editorWarning-foreground, #eab308);
+      color: var(--vscode-editorWarning-foreground, var(--status-warning));
     }
     .checklist-item-row.state-acknowledged .checklist-issue-count {
-      color: var(--vscode-editorWarning-foreground, #eab308);
+      color: var(--vscode-editorWarning-foreground, var(--status-warning));
       font-weight: 600;
     }
     .checklist-item-row.state-acknowledged .checklist-checkbox {
-      accent-color: var(--vscode-editorWarning-foreground, #eab308);
+      accent-color: var(--vscode-editorWarning-foreground, var(--sev-warning));
     }
 
     .checklist-item-row.state-fixed .checklist-item-title {
-      color: var(--vscode-testing-iconPassed, #22c55e);
+      color: var(--vscode-testing-iconPassed, var(--status-success));
     }
     .checklist-item-row.state-fixed .checklist-issue-count {
-      color: var(--vscode-testing-iconPassed, #22c55e);
+      color: var(--vscode-testing-iconPassed, var(--status-success));
     }
     .checklist-item-row.state-fixed .checklist-checkbox {
-      accent-color: var(--vscode-testing-iconPassed, #22c55e);
+      accent-color: var(--vscode-testing-iconPassed, var(--status-success));
     }
 
     /* Inline Issues Panel */
@@ -1702,7 +2193,7 @@ private updateHtml(): void {
       padding: 6px 8px;
       background: var(--surface-raised);
       border: 1px solid var(--border);
-      border-left: 2px solid var(--vscode-focusBorder, #007acc);
+      border-left: 2px solid var(--vscode-focusBorder, var(--focus));
       border-radius: var(--radius-sm);
       display: flex;
       flex-direction: column;
@@ -1761,7 +2252,7 @@ private updateHtml(): void {
     .rec-skill-name {
       font-size: 11px;
       font-weight: 700;
-      color: #93c5fd;
+      color: var(--sev-info);
     }
     .rec-skill-reason {
       font-size: 10px;
@@ -1826,7 +2317,7 @@ private updateHtml(): void {
       padding: 4px 6px;
       background: rgba(16, 185, 129, 0.08);
       border-radius: 3px;
-      color: #10b981;
+      color: var(--status-success);
       font-size: 9px;
       display: flex;
       flex-direction: column;
@@ -1881,14 +2372,14 @@ private updateHtml(): void {
     }
     .chip-btn.active {
       background: rgba(59, 130, 246, 0.2);
-      color: #60a5fa;
+      color: var(--sev-info);
       border-color: rgba(59, 130, 246, 0.4);
       font-weight: 600;
     }
     .offline-banner {
       background: rgba(245, 158, 11, 0.1);
       border: 1px solid rgba(245, 158, 11, 0.25);
-      color: #f59e0b;
+      color: var(--sev-warning);
       font-size: 9.5px;
       padding: 4px 8px;
       border-radius: var(--radius-sm);
@@ -1934,7 +2425,7 @@ private updateHtml(): void {
       color: var(--muted);
     }
     .stars-gold {
-      color: #f59e0b;
+      color: var(--sev-warning);
     }
     .discovery-skill-desc {
       font-size: 9.5px;
@@ -1953,16 +2444,16 @@ private updateHtml(): void {
       border-radius: 2px;
     }
     .compat-status-tag.compatible {
-      color: #10b981;
+      color: var(--status-success);
       background: rgba(16, 185, 129, 0.1);
     }
     .compat-status-tag.partial {
-      color: #f59e0b;
+      color: var(--sev-warning);
       background: rgba(245, 158, 11, 0.1);
     }
     .safety-warn-tag {
       font-size: 8.5px;
-      color: #f59e0b;
+      color: var(--sev-warning);
       background: rgba(245, 158, 11, 0.1);
       padding: 1px 4px;
       border-radius: 2px;
@@ -2009,13 +2500,14 @@ private updateHtml(): void {
   <!-- Top Workspace Summary -->
   <header class="top-header">
     <div class="brand-row">
-      <div style="display: flex; align-items: center; gap: 6px;">
+      <div style="display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; overflow: hidden; margin-right: 6px;">
         <span class="brand-title">CraftLens</span>
-        <span class="workspace-name" title="${projectName}">${projectName}</span>
       </div>
-      <button class="project-overview-btn" onclick="openProjectOverview()" title="Open Project Overview in Editor Tab">
-        ⊞ Overview
-      </button>
+      <div class="top-toolbar" role="toolbar" aria-label="CraftLens quick actions">
+        <button class="project-overview-btn" onclick="openProjectOverview()" title="Open Project Overview in Editor Tab" aria-label="Open Project Overview in Editor Tab">
+          ⊞ Overview
+        </button>
+      </div>
     </div>
 
     <!-- Live Dashboard (3 Compact Cards) -->
@@ -2060,10 +2552,29 @@ private updateHtml(): void {
       </div>
     </div>
 
+    <!-- Persistent Living Documents Quick Links -->
+    <div class="docs-links-bar" role="navigation" aria-label="CraftLens documents">
+      <span class="docs-bar-label">Docs:</span>
+      <div class="doc-links-group">
+        <button class="doc-link-chip" onclick="openIssuesFile()" data-action="open-issues-file" title="Open issues.md in editor" aria-label="Open issues.md">
+          issues.md
+        </button>
+        <button class="doc-link-chip" onclick="openSuggestionsFile()" data-action="open-suggestions-file" title="Open suggestions.md in editor" aria-label="Open suggestions.md">
+          suggestions.md
+        </button>
+        <button class="doc-link-chip" onclick="openChangesFile()" data-action="open-changes-file" title="Open changes.md in editor" aria-label="Open changes.md">
+          changes.md
+        </button>
+        <button class="doc-link-chip" onclick="openChecklistFile()" data-action="open-checklist" title="Open checklist.md in editor" aria-label="Open checklist.md">
+          checklist.md
+        </button>
+      </div>
+    </div>
+
     ${this.issueFilter !== 'all' ? `
       <div style="padding: 4px 12px; background: rgba(59, 130, 246, 0.1); border-bottom: 1px solid var(--border); font-size: 10px; display: flex; justify-content: space-between; align-items: center;">
         <span>Filter active: <strong>${escapeHtml(String(this.issueFilter || '').toUpperCase())}</strong></span>
-        <span style="cursor: pointer; color: #60a5fa;" data-action="clear-filter" onclick="clearFilter()">Clear</span>
+        <span style="cursor: pointer; color: var(--sev-info);" data-action="clear-filter" onclick="clearFilter()">Clear</span>
       </div>
     ` : ''}
   </header>
@@ -2110,6 +2621,23 @@ private updateHtml(): void {
         }
       }
 
+      window.addEventListener('message', function(event) {
+        const message = event.data;
+        if (message && message.type === 'highlightFinding' && message.findingId) {
+          const cards = document.querySelectorAll('.finding-card');
+          for (let i = 0; i < cards.length; i++) {
+            cards[i].classList.remove('selected');
+          }
+          const target = document.querySelector('.finding-card[data-finding-id="' + message.findingId + '"]');
+          if (target) {
+            target.classList.add('selected');
+            if (typeof target.scrollIntoView === 'function') {
+              target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }
+        }
+      });
+
       window.switchTab = function(tab) { post('switchTab', { tab: tab }); };
       window.openProjectOverview = function() { post('openProjectOverview'); };
       window.selectRuleSource = function(mode) { post('setRuleSource', { mode: mode }); };
@@ -2117,7 +2645,54 @@ private updateHtml(): void {
       window.clearFilter = function() { post('clearFilter'); };
       window.onSearch = function(input) { post('searchIssues', { query: input ? input.value : '' }); };
       window.toggleFinding = function(findingId) { post('toggleFinding', { findingId: findingId }); };
-      window.toggleCategory = function(category) { post('toggleCategory', { category: category }); };
+      let lastToggleTime = 0;
+      let lastToggleCat = '';
+      window.toggleCategory = function(category, event) {
+        if (event) {
+          if (event.stopPropagation) event.stopPropagation();
+          if (event.preventDefault) event.preventDefault();
+        }
+        const now = Date.now();
+        if (lastToggleCat === category && now - lastToggleTime < 180) {
+          return;
+        }
+        lastToggleCat = category;
+        lastToggleTime = now;
+
+        // Immediate responsive accordion DOM collapse/expand
+        try {
+          const headerEl = (event && event.target && event.target.closest)
+            ? event.target.closest('.cat-header')
+            : document.querySelector('.cat-header[data-category="' + category + '"]');
+          const groupEl = headerEl ? headerEl.closest('.cat-group') : null;
+          if (groupEl) {
+            const isCurrentlyCollapsed = groupEl.classList.contains('collapsed');
+            if (isCurrentlyCollapsed) {
+              groupEl.classList.remove('collapsed');
+              groupEl.classList.add('expanded');
+              const body = groupEl.querySelector('.cat-body');
+              if (body) body.style.display = 'block';
+              const emptyState = groupEl.querySelector('.security-empty-state');
+              if (emptyState) emptyState.style.display = 'block';
+              const chevron = groupEl.querySelector('.cat-chevron');
+              if (chevron) chevron.textContent = '⌄';
+            } else {
+              groupEl.classList.remove('expanded');
+              groupEl.classList.add('collapsed');
+              const body = groupEl.querySelector('.cat-body');
+              if (body) body.style.display = 'none';
+              const emptyState = groupEl.querySelector('.security-empty-state');
+              if (emptyState) emptyState.style.display = 'none';
+              const chevron = groupEl.querySelector('.cat-chevron');
+              if (chevron) chevron.textContent = '›';
+            }
+          }
+        } catch (err) {
+          console.error('[CraftLens] Accordion toggle error:', err);
+        }
+
+        post('toggleCategory', { category: category });
+      };
       window.toggleUserRuleGroup = function(groupId) { post('toggleUserRuleGroup', { groupId: groupId }); };
       window.toggleUserRuleDetail = function(ruleId) { post('toggleUserRuleDetail', { ruleId: ruleId }); };
       window.toggleSkillExpand = function(skillId) { post('toggleSkillExpand', { skillId: skillId }); };
@@ -2156,6 +2731,34 @@ private updateHtml(): void {
       };
       window.runAudit = function() {
         post('runAudit');
+      };
+      window.openMasterChecklist = function() {
+        post('openMasterChecklist');
+      };
+      window.applySuggestedFix = function(findingId, event) {
+        if (event && event.stopPropagation) event.stopPropagation();
+        var targetBtn = event && event.currentTarget ? event.currentTarget : (event && event.target ? event.target : null);
+        if (targetBtn) {
+          if (targetBtn.getAttribute('aria-busy') === 'true' || targetBtn.disabled) {
+            return;
+          }
+          targetBtn.disabled = true;
+          targetBtn.setAttribute('aria-busy', 'true');
+          targetBtn.textContent = 'Applying...';
+          var card = targetBtn.closest('.finding-card');
+          if (card) {
+            card.classList.add('card-processing');
+          }
+        }
+        post('applySuggestedFix', { findingId: findingId });
+      };
+      window.showManualFix = function(findingId, event) {
+        if (event && event.stopPropagation) event.stopPropagation();
+        post('showManualFix', { findingId: findingId });
+      };
+      window.showFindingDetail = function(findingId, event) {
+        if (event && event.stopPropagation) event.stopPropagation();
+        post('showFindingDetail', { findingId: findingId });
       };
       window.add = function(payload) {
         post('add', payload || {});
@@ -2231,6 +2834,20 @@ private updateHtml(): void {
         post('openChecklist');
       };
 
+      window.openIssuesFile = function() {
+        post('openIssuesFile');
+      };
+      window.openProblemsFile = window.openIssuesFile;
+
+      window.openSuggestionsFile = function() {
+        post('openSuggestionsFile');
+      };
+      window.openSuggestionFile = window.openSuggestionsFile;
+
+      window.openChangesFile = function() {
+        post('openChangesFile');
+      };
+
       window.toggleCriterionAction = function(id, checked, event) {
         if (event) {
           event.stopPropagation();
@@ -2277,8 +2894,9 @@ private updateHtml(): void {
             break;
           }
           case 'toggle-category': {
+            if (e && e.stopPropagation) e.stopPropagation();
             const cat = el.getAttribute('data-category');
-            if (cat) window.toggleCategory(cat);
+            if (cat) window.toggleCategory(cat, e);
             break;
           }
           case 'open-instance': {
@@ -2308,6 +2926,22 @@ private updateHtml(): void {
             e.stopPropagation();
             const fid = el.getAttribute('data-finding-id');
             window.suggestBetterDesign(fid, e);
+            break;
+          }
+          case 'apply-suggested-fix': {
+            e.stopPropagation();
+            const fid = el.getAttribute('data-finding-id');
+            if (fid) window.applySuggestedFix(fid, e);
+            break;
+          }
+          case 'show-manual-fix': {
+            e.stopPropagation();
+            const fid = el.getAttribute('data-finding-id');
+            if (fid) window.showManualFix(fid, e);
+            break;
+          }
+          case 'open-master-checklist': {
+            window.openMasterChecklist();
             break;
           }
           case 'reject-finding': {
@@ -2399,6 +3033,20 @@ private updateHtml(): void {
             window.openChecklistFile();
             break;
           }
+          case 'open-issues-file':
+          case 'open-problems-file': {
+            window.openIssuesFile();
+            break;
+          }
+          case 'open-suggestions-file':
+          case 'open-suggestion-file': {
+            window.openSuggestionsFile();
+            break;
+          }
+          case 'open-changes-file': {
+            window.openChangesFile();
+            break;
+          }
           case 'toggle-checklist-issues': {
             e.stopPropagation();
             const cid = el.getAttribute('data-criterion-id');
@@ -2465,30 +3113,169 @@ private updateHtml(): void {
   // ─────────────────────────────────────────────────────────────
   // 1. Findings View (Section 1, 2, 3, 21)
   // ─────────────────────────────────────────────────────────────
+  private isSecurityFinding(f: Finding): boolean {
+    if (f.category === 'security' || (f.category as any) === 'sec') return true;
+    const ruleId = (f.ruleId || '').toUpperCase();
+    if (ruleId.startsWith('SEC-') || /security|xss|csrf|sqli|inject|secret|auth|perm/i.test(ruleId)) return true;
+    const title = f.title || f.problemTitle || '';
+    if (/security|vulnerability|credential|secret|auth|xss|injection|csrf|idor|hardcoded key/i.test(title)) return true;
+    return false;
+  }
+
+  private maskSensitiveSnippet(snippet: string, isSecurity: boolean): string {
+    if (!isSecurity || !snippet) return snippet;
+    return snippet
+      .replace(/(ghp_[a-zA-Z0-9]{36})/g, (m) => m.slice(0, 4) + '••••••••••••••••••••••••••••••••' + m.slice(-4))
+      .replace(/(sk-[a-zA-Z0-9]{20,})/g, (m) => m.slice(0, 3) + '••••••••••••••••' + m.slice(-3))
+      .replace(/(AKIA[0-9A-Z]{16})/g, (m) => m.slice(0, 4) + '••••••••••••' + m.slice(-4))
+      .replace(/((?:api[_-]?key|secret|token|password|bearer|auth)["']?\s*[:=]\s*["'])([^"'•]{8,})(["'])/gi, '$1••••••••$3');
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 1. Findings View (Section 1, 2, 3, 21)
+  // ─────────────────────────────────────────────────────────────
+  private getRecommendationState(f: Finding): {
+    exists: boolean;
+    text?: string;
+    skillId?: string;
+    whyItMatters?: string;
+    evidence?: string[];
+    automaticFixAvailable: boolean;
+    changeId?: string;
+    primarySug?: Suggestion;
+  } {
+    const fixCap = this.findingStore.getFixCapability(f, this.projectContext, this.engine?.getSkillManager());
+    const suggestions: Suggestion[] = (f.suggestions && f.suggestions.length > 0)
+      ? f.suggestions
+      : ContextAwareFixGenerator.generateSuggestions(f, this.projectContext);
+
+    const primarySug = suggestions[0];
+    const automaticFixAvailable = fixCap.canApply;
+
+    const text =
+      fixCap.suggestion ||
+      primarySug?.explanation ||
+      primarySug?.title ||
+      f.howToFix ||
+      f.recommendation ||
+      (f.recommendations && f.recommendations.length > 0 ? f.recommendations[0].description : undefined);
+
+    const exists = Boolean(text && text.trim().length > 0);
+    const whyItMatters = fixCap.whyItMatters || f.whyItMatters || f.why || f.description || '';
+    const evidence = f.evidence?.map(e => e.explanation || e.snippet || '').filter(Boolean) || [];
+    const changeId = fixCap.fixId || (f.fix as any)?.id || f.designFix?.id || primarySug?.id;
+    const skillId = fixCap.skillId || f.sourceSkillId || (f as any).skillId || f.clusterId || f.category;
+
+    return {
+      exists,
+      text: text?.trim(),
+      skillId,
+      whyItMatters,
+      evidence,
+      automaticFixAvailable,
+      changeId,
+      primarySug,
+    };
+  }
+
   private renderIssuesView(findings: Finding[], totalIssues: number): string {
     if (totalIssues === 0) {
       return `
         <div style="padding: 32px 16px; text-align: center; color: var(--muted);">
           <div style="font-size: 13px; font-weight: 600; color: var(--header-fg); margin-bottom: 4px;">No Quality Slop Detected</div>
           <div style="font-size: 10.5px; margin-bottom: 12px;">Scanned: UI / UX · Design Tokens · Accessibility · Code Quality · Security</div>
-          <button class="btn btn-primary" data-action="run-audit" onclick="runAudit()">Run Review</button>
         </div>
       `;
     }
 
-    const categories: { id: FindingCategory; label: string }[] = [
-      { id: 'ui-ux', label: 'UI / UX' },
-      { id: 'content', label: 'Content' },
-      { id: 'accessibility', label: 'Accessibility' },
-      { id: 'code', label: 'Code Quality' },
-      { id: 'code-quality', label: 'Code Quality' },
-      { id: 'security', label: 'Security' },
-      { id: 'performance', label: 'Performance' },
+    const securityFindings = findings.filter(f => this.isSecurityFinding(f));
+
+    interface AuditCategoryDef {
+      id: string;
+      label: string;
+      match: (f: Finding) => boolean;
+      isSecurity?: boolean;
+    }
+
+    const categories: AuditCategoryDef[] = [
+      {
+        id: 'ui-ux',
+        label: 'UI / UX',
+        match: f => !this.isSecurityFinding(f) && (f.category === 'ui-ux' || f.category === 'design' || f.category === 'ui' || f.category === 'visual' || f.category === 'hierarchy' || f.category === 'interaction' || f.category === 'css'),
+      },
+      {
+        id: 'security',
+        label: 'Security',
+        match: f => this.isSecurityFinding(f),
+        isSecurity: true,
+      },
+      {
+        id: 'performance',
+        label: 'Performance',
+        match: f => !this.isSecurityFinding(f) && (f.category === 'performance' || f.category === 'perf'),
+      },
+      {
+        id: 'code-quality',
+        label: 'Code Quality',
+        match: f => !this.isSecurityFinding(f) && (f.category === 'code-quality' || f.category === 'backend' || f.category === 'tech' || f.category === 'code' || f.category === 'architecture' || !f.category),
+      },
+      {
+        id: 'accessibility',
+        label: 'Accessibility',
+        match: f => !this.isSecurityFinding(f) && (f.category === 'accessibility' || f.category === 'a11y'),
+      },
+      {
+        id: 'dependencies',
+        label: 'Dependencies',
+        match: f => !this.isSecurityFinding(f) && (f.category === 'dependencies' || f.category === 'dependency' || f.category === 'deps' || f.category === 'dep'),
+      },
+      {
+        id: 'content',
+        label: 'Content',
+        match: f => !this.isSecurityFinding(f) && (f.category === 'content' || f.category === 'copy' || f.category === 'placeholder'),
+      },
     ];
+
+    const matchedFindingIds = new Set<string>();
+    for (const cat of categories) {
+      for (const f of findings) {
+        if (cat.match(f)) matchedFindingIds.add(f.id || f.ruleId || '');
+      }
+    }
+    const unmatchedFindings = findings.filter(f => !matchedFindingIds.has(f.id || f.ruleId || ''));
+    if (unmatchedFindings.length > 0) {
+      const otherCatMap = new Map<string, Finding[]>();
+      for (const f of unmatchedFindings) {
+        const catKey = (f.category || 'other').toLowerCase();
+        if (!otherCatMap.has(catKey)) otherCatMap.set(catKey, []);
+        otherCatMap.get(catKey)!.push(f);
+      }
+      for (const [catKey, fList] of otherCatMap.entries()) {
+        const label = catKey.charAt(0).toUpperCase() + catKey.slice(1);
+        categories.push({
+          id: catKey,
+          label: label,
+          match: f => otherCatMap.get(catKey)?.some(other => (other.id || other.ruleId) === (f.id || f.ruleId)) ?? false,
+        });
+      }
+    }
 
     const hasActiveFilter = this.issueFilter !== 'all' || Boolean(this.issueSearchQuery);
 
     return `
+      <div style="display: flex; gap: 6px; padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 10px; color: var(--muted); font-weight: 600;">Reports:</span>
+        <button class="btn-control" onclick="openIssuesFile()" data-action="open-issues-file" title="Open issues.md in editor" aria-label="View issues.md">
+          View issues.md
+        </button>
+        <button class="btn-control" onclick="openSuggestionsFile()" data-action="open-suggestions-file" title="Open suggestions.md in editor" aria-label="View suggestions.md">
+          View suggestions.md
+        </button>
+        <button class="btn-control" onclick="openChangesFile()" data-action="open-changes-file" title="Open changes.md in editor" aria-label="View changes.md">
+          View changes.md
+        </button>
+      </div>
+
       <div class="filter-toolbar">
         <input
           type="text"
@@ -2503,22 +3290,53 @@ private updateHtml(): void {
           <span class="filter-tag ${this.issueFilter === 'warning' ? 'active' : ''}" data-action="set-filter" data-filter="warning" onclick="setFilter('warning')">Warning</span>
           <span class="filter-tag ${this.issueFilter === 'moderate' ? 'active' : ''}" data-action="set-filter" data-filter="moderate" onclick="setFilter('moderate')">Moderate</span>
           <span class="filter-tag ${this.issueFilter === 'hasFix' ? 'active' : ''}" data-action="set-filter" data-filter="hasFix" onclick="setFilter('hasFix')">Fixable</span>
-          ${hasActiveFilter ? '<span class="filter-tag" style="color: #ef4444;" data-action="clear-filter" onclick="clearFilter()">Clear</span>' : ''}
+          ${hasActiveFilter ? '<span class="filter-tag" style="color: var(--status-error);" data-action="clear-filter" onclick="clearFilter()">Clear</span>' : ''}
         </div>
       </div>
 
       ${categories.map(cat => {
-        const catFindings = findings.filter(f => f.category === cat.id);
-        if (catFindings.length === 0) return '';
+        const catFindings = findings.filter(f => cat.match(f));
+        if (catFindings.length === 0 && !cat.isSecurity) return '';
         const isCatExpanded = this.expandedCategories.has(cat.id);
+        const catSeverities = catFindings.map(f => toSemanticSeverity(f.severity));
+        const highestSev = catSeverities.includes('error') ? 'Critical' : catSeverities.includes('warning') ? 'Warning' : 'Info';
 
         return `
-          <div class="cat-group">
-            <div class="cat-header" data-action="toggle-category" data-category="${cat.id}" onclick="toggleCategory('${cat.id}')">
-              <span>${cat.label}</span>
-              <span class="cat-badge">${catFindings.length}</span>
+          <div class="cat-group ${cat.isSecurity ? 'security-audit-section' : ''}">
+            <div class="cat-header ${cat.isSecurity ? 'security-cat-header' : ''}"
+                 data-action="toggle-category"
+                 data-category="${cat.id}"
+                 onclick="toggleCategory('${cat.id}', event)">
+              <div class="cat-header-title">
+                <span class="cat-chevron">${isCatExpanded ? '⌄' : '›'}</span>
+                ${cat.id === 'ui-ux' ? `
+                  <span class="cat-icon">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="color: var(--vscode-foreground);">
+                      <path d="m14.54 6.84-5.38-5.38a1.5 1.5 0 0 0-2.12 0l-5.66 5.66a1.5 1.5 0 0 0 0 2.12l3.54 3.54a1.5 1.5 0 0 0 2.12 0l1.41-1.41 1.06 1.06-.71.71a.5.5 0 0 0 .71.71l2.83-2.83a.5.5 0 0 0-.71-.71l-.71.71-1.06-1.06 4.67-4.67a1.5 1.5 0 0 0 0-2.12v-.35zm-6.09-4.67a.5.5 0 0 1 .71 0l5.38 5.38a.5.5 0 0 1 0 .71l-1.06 1.06-5.38-5.38.35-.35v-1.42zm-1.06 1.06 5.38 5.38-4.67 4.67a.5.5 0 0 1-.71 0l-3.54-3.54a.5.5 0 0 1 0-.71l3.54-3.54v-2.26z"/>
+                    </svg>
+                  </span>
+                ` : ''}
+                ${cat.isSecurity ? `
+                  <span class="cat-icon">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="color: var(--sev-error);">
+                      <path fill-rule="evenodd" clip-rule="evenodd" d="M8 1l6 2.5v4.5c0 4.15-2.6 7.74-6 8.95-3.4-1.21-6-4.8-6-8.95V3.5L8 1zm0 1.25L3 4.33v3.42c0 3.32 2.08 6.2 5 7.21 2.92-1.01 5-3.89 5-7.21V4.33L8 2.25z"/>
+                    </svg>
+                  </span>
+                ` : ''}
+                <span class="cat-title-text" style="${cat.isSecurity ? 'font-weight: 700; color: var(--header-fg);' : ''}">${cat.label}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                ${catFindings.length > 0 ? `<span class="cat-sev-pill cat-sev--${highestSev.toLowerCase()}">${highestSev}</span>` : ''}
+                <span class="cat-badge" style="${cat.isSecurity && catFindings.length > 0 ? 'background: rgba(239, 68, 68, 0.2); color: var(--status-error); border: 1px solid rgba(239, 68, 68, 0.4);' : ''}">${catFindings.length}</span>
+              </div>
             </div>
-            ${isCatExpanded ? catFindings.map(f => this.renderFindingCard(f)).join('') : ''}
+            ${isCatExpanded ? (
+              catFindings.length > 0
+                ? `<div class="cat-body">${catFindings.map(f => this.renderFindingCard(f, cat.isSecurity)).join('')}</div>`
+                : cat.isSecurity
+                  ? `<div class="security-empty-state" style="padding: 10px 12px; font-size: 11px; color: var(--muted); font-style: italic;">No security vulnerabilities detected.</div>`
+                  : ''
+            ) : ''}
           </div>
         `;
       }).join('')}
@@ -2528,7 +3346,7 @@ private updateHtml(): void {
   /**
    * Finding card formatted strictly according to Section 21 and Section 1, 2, 3.
    */
-  private renderFindingCard(f: Finding): string {
+  private renderFindingCard(f: Finding, forceSecurity = false): string {
     const isExpanded = this.expandedFindingIds.has(f.id || f.ruleId);
     const isSelected = this.selectedFindingId === (f.id || f.ruleId);
     const rawInstances: Array<{ filePath?: string; line?: number; location?: any; snippet?: string }> =
@@ -2552,83 +3370,187 @@ private updateHtml(): void {
     const instanceCount = rawInstances.length || 1;
     const hasMultipleInstances = instanceCount > 1;
 
-    const semSev = toSemanticSeverity(f.severity);
-    const meta = SEMANTIC_SEVERITY_MAP[semSev];
-    const label = meta.label;
+    const isSecurity = forceSecurity || this.isSecurityFinding(f);
+    const semSev = isSecurity ? 'error' : toSemanticSeverity(f.severity);
+
+    // Determine badge text strictly by severity & security category (Section 2 & 3)
+    let badgeText = 'SUGGESTION';
+    if (isSecurity) {
+      badgeText = 'SECURITY';
+    } else if (semSev === 'error') {
+      if (f.severity === 'critical' || f.severity === 'blocker') {
+        badgeText = 'CRITICAL';
+      } else {
+        badgeText = 'ERROR';
+      }
+    } else if (semSev === 'warning') {
+      badgeText = 'WARNING';
+    } else if (semSev === 'moderate') {
+      badgeText = f.severity === 'medium' ? 'MEDIUM' : 'MODERATE';
+    } else {
+      badgeText = f.severity === 'low' ? 'LOW' : 'SUGGESTION';
+    }
 
     const loc = f.location || f.primaryLocation;
     const filePath = f.filePath || loc?.filePath || '';
     const fileName = filePath ? path.basename(filePath) : 'file';
-    const startLine = f.startLine || (loc as any)?.start?.line || 1;
+    const startLine = f.startLine || (loc as any)?.start?.line || (loc as any)?.range?.startLine || 1;
     const locText = `${fileName}:${startLine}`;
 
     const snippet = f.evidence?.[0]?.snippet || '';
-    const suggestions: Suggestion[] = f.suggestions && f.suggestions.length > 0 ? f.suggestions : [];
+    const maskedSnippet = this.maskSensitiveSnippet(snippet, isSecurity);
+
+    const suggestions: Suggestion[] = (f.suggestions && f.suggestions.length > 0)
+      ? f.suggestions
+      : ContextAwareFixGenerator.generateSuggestions(f, this.projectContext);
+
+    // Contextual Title & Explanation (Section 4)
+    const issueTitle = f.problemTitle || f.title || f.whatIsWrong || f.ruleId;
+    let explanation = f.whatIsWrong || f.message || f.description || '';
+    if (explanation === issueTitle && f.whyItMatters) {
+      explanation = f.whyItMatters;
+    }
+
+    const recState = this.getRecommendationState(f);
+    const isManualOnly = ((f.fix as any) === 'manual' || (f.fix as any)?.kind === 'manual') || (recState.primarySug && recState.primarySug.type === 'manual' && !recState.automaticFixAvailable);
 
     return `
-      <div class="finding-card ${isSelected ? 'selected' : ''}">
-        <div class="finding-header-row" onclick="toggleFinding('${f.id || f.ruleId}')" data-action="toggle-finding" data-finding-id="${escapeHtml(f.id || f.ruleId)}">
-          <div class="finding-sev-row">
-            <span class="sev-badge ${semSev}">${escapeHtml(String(label || 'INFO').toUpperCase())}</span>
-          </div>
-          <div class="finding-title-row">
-            <span class="finding-title-text">${escapeHtml(f.problemTitle || f.title || f.ruleId)}</span>
-          </div>
-        </div>
-
-        <div class="finding-support-info">
-          ${hasMultipleInstances ? `
-            <!-- Multiple Instances List (Section 17 & 18) -->
-            <div class="finding-instance-count-label">${instanceCount} instances</div>
-            <div class="finding-instances-tree">
-              ${rawInstances.map((inst, idx) => {
-                const instFilePath = inst.filePath || filePath;
-                const instFileName = instFilePath ? path.basename(instFilePath) : fileName;
-                const instLine = inst.line || (inst.location as any)?.start?.line || (inst.location as any)?.range?.startLine || startLine;
-                return `
-                  <div class="instance-row">
-                    <span class="instance-idx">[${idx + 1}]</span>
-                    <span class="finding-location-link"
-                          onclick="openInstance('${f.id || f.ruleId}', ${idx}, '${escapeHtml(instFilePath)}', ${instLine}, event)"
-                          data-action="open-instance"
-                          data-finding-id="${escapeHtml(f.id || f.ruleId)}"
-                          data-instance-index="${idx}"
-                          data-file-path="${escapeHtml(instFilePath)}"
-                          data-line="${instLine}">
-                      ${escapeHtml(instFileName)}:${instLine}
-                    </span>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          ` : `
-            <!-- Clickable file and line link (Section 1) -->
-            <div class="finding-location-single">
+      <div class="finding-card ${isSelected ? 'selected' : ''} finding--${semSev} ${isSecurity ? 'finding--security' : ''}" data-finding-id="${escapeHtml(f.id || f.ruleId)}">
+        <!-- 1. Inline Issue Label: Severity Badge & Location (Single location case) -->
+        <div class="finding-label-row">
+          <span class="sev-badge ${semSev}">${escapeHtml(badgeText)}</span>
+          ${!hasMultipleInstances ? `
+            <span class="finding-location-single">
               <span class="finding-location-link"
                     onclick="openInstance('${f.id || f.ruleId}', 0, '${escapeHtml(filePath)}', ${startLine}, event)"
                     data-action="open-instance"
                     data-finding-id="${escapeHtml(f.id || f.ruleId)}"
                     data-instance-index="0"
                     data-file-path="${escapeHtml(filePath)}"
-                    data-line="${startLine}">
+                    data-line="${startLine}"
+                    title="Open in editor at line ${startLine}">
                 ${escapeHtml(locText)}
               </span>
-            </div>
-          `}
-
-          <!-- Code Snippet -->
-          ${snippet ? `
-            <div class="code-snippet-box"><code>${escapeHtml(snippet)}</code></div>
-          ` : ''}
-
-          <!-- Existing Design Token Detection (Section 20 & 21) -->
-          ${f.detectedToken ? `
-            <div class="token-callout">
-              <span>Existing design token detected:</span>
-              <strong style="color: var(--vscode-textLink-foreground, #3794ff); font-family: var(--font-mono);">${escapeHtml(f.detectedToken.name.startsWith('--') ? f.detectedToken.name : '--' + f.detectedToken.name)}</strong>
-            </div>
+            </span>
           ` : ''}
         </div>
+
+        <!-- 2. Issue Title (Clickable Navigation Target) -->
+        <div class="finding-title-row"
+             onclick="openInstance('${f.id || f.ruleId}', 0, '${escapeHtml(filePath)}', ${startLine}, event)"
+             data-action="open-instance"
+             data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+             data-instance-index="0"
+             data-file-path="${escapeHtml(filePath)}"
+             data-line="${startLine}"
+             title="Open ${escapeHtml(locText)} in editor">
+          <span class="finding-title-text sev-title--${semSev} clickable-title">${escapeHtml(issueTitle)}</span>
+        </div>
+
+        <!-- Multiple Locations Stacked List (when multiple files exist) -->
+        ${hasMultipleInstances ? `
+          <div class="finding-locations-stacked">
+            ${rawInstances.map((inst, idx) => {
+              const instFilePath = inst.filePath || filePath;
+              const instFileName = instFilePath ? path.basename(instFilePath) : fileName;
+              const instLine = inst.line || (inst.location as any)?.start?.line || (inst.location as any)?.range?.startLine || startLine;
+              const displayPath = instFilePath ? (instFilePath.includes('/') ? instFilePath.replace(/^.*?\/([^/]+\/[^/]+)$/, '$1') : instFileName) : instFileName;
+              return `
+                <div class="stacked-location-item">
+                  <span class="finding-location-link"
+                        onclick="openInstance('${f.id || f.ruleId}', ${idx}, '${escapeHtml(instFilePath)}', ${instLine}, event)"
+                        data-action="open-instance"
+                        data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+                        data-instance-index="${idx}"
+                        data-file-path="${escapeHtml(instFilePath)}"
+                        data-line="${instLine}"
+                        title="Open in editor at line ${instLine}">
+                    ${escapeHtml(displayPath)}:${instLine}
+                  </span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+
+        <!-- 3. Short explanation / details -->
+        ${explanation ? `
+          <div class="finding-short-desc">${escapeHtml(explanation)}</div>
+        ` : ''}
+
+        ${isSecurity && f.whyItMatters ? `
+          <div class="security-why-matters"><strong>Why it matters:</strong> ${escapeHtml(f.whyItMatters)}</div>
+        ` : ''}
+
+        <!-- 4. Suggested Fix (Above Code) -->
+        ${recState.exists ? `
+          <div class="finding-fix-preview${!recState.automaticFixAvailable ? ' clickable-fix-preview' : ''}"
+               ${!recState.automaticFixAvailable ? `onclick="showFindingDetail('${f.id || f.ruleId}', event)" data-action="show-finding-detail" data-finding-id="${escapeHtml(f.id || f.ruleId)}" title="Click to view full recommendation in bottom panel"` : ''}>
+            <span class="fix-preview-label">Suggested Fix:</span>
+            ${recState.automaticFixAvailable ? `
+              ${recState.text ? `<span class="fix-preview-text" onclick="showFindingDetail('${f.id || f.ruleId}', event)" style="cursor: pointer;" title="Click for details in bottom panel">${escapeHtml(recState.text)}</span>` : ''}
+              <div class="finding-actions-row" style="margin-top: 6px;">
+                <button class="btn btn-primary fix-action-btn"
+                        data-action="apply-suggested-fix"
+                        data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+                        title="Apply contextual fix"
+                        onclick="applySuggestedFix('${f.id || f.ruleId}', event)">
+                  Apply Fix
+                </button>
+                <button class="btn btn-quiet reject-action-btn"
+                        data-action="reject-finding"
+                        data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+                        title="Reject finding"
+                        onclick="rejectFinding('${f.id || f.ruleId}', event)">
+                  Reject
+                </button>
+              </div>
+            ` : `
+              <span class="fix-preview-text fix-preview-clickable">${escapeHtml(recState.text)}</span>
+              <div class="finding-actions-row" style="margin-top: 6px;">
+                ${isManualOnly ? `
+                  <button class="btn btn-secondary"
+                          data-action="show-finding-detail"
+                          data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+                          title="Manual fix required"
+                          onclick="showFindingDetail('${f.id || f.ruleId}', event)">
+                    Manual fix
+                  </button>
+                ` : ''}
+                <button class="btn btn-quiet reject-action-btn"
+                        data-action="reject-finding"
+                        data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+                        title="Reject finding"
+                        onclick="rejectFinding('${f.id || f.ruleId}', event)">
+                  Reject
+                </button>
+              </div>
+            `}
+          </div>
+        ` : `
+          <div class="finding-actions-row">
+            <button class="btn btn-quiet reject-action-btn"
+                    data-action="reject-finding"
+                    data-finding-id="${escapeHtml(f.id || f.ruleId)}"
+                    title="Reject finding"
+                    onclick="rejectFinding('${f.id || f.ruleId}', event)">
+              Reject
+            </button>
+          </div>
+        `}
+
+        <!-- 5. Affected code snippet box with matching severity accenting (Below Suggested Fix) -->
+        ${snippet ? `
+          <div class="code-snippet-box"><code>${escapeHtml(maskedSnippet)}</code></div>
+        ` : ''}
+
+        <!-- Existing Design Token Detection (Section 20 & 21) -->
+        ${f.detectedToken ? `
+          <div class="token-callout">
+            <span>Existing design token detected:</span>
+            <strong style="color: var(--vscode-textLink-foreground, var(--sev-info)); font-family: var(--font-mono);">${escapeHtml(f.detectedToken.name.startsWith('--') ? f.detectedToken.name : '--' + f.detectedToken.name)}</strong>
+          </div>
+        ` : ''}
 
         <!-- Expandable Explanation & Dynamic Suggestions (Section 2, 3, 21) -->
         ${isExpanded ? `
@@ -2643,14 +3565,14 @@ private updateHtml(): void {
               <div class="explanation-text">${escapeHtml(f.whyItMatters || f.description || f.whatIsWrong || '')}</div>
             </div>
 
-            <!-- Dynamic Up-to-3 Suggestions (Section 2 & 3) -->
-            ${suggestions.length > 0 ? `
+            <!-- Dynamic Alternative Suggestions -->
+            ${suggestions.length > 1 ? `
               <div class="suggestions-block">
-                <div class="suggestions-header">Suggested Fixes (${suggestions.length})</div>
-                ${suggestions.map((sug, idx) => `
+                <div class="suggestions-header">Alternative Directions (${suggestions.length})</div>
+                ${suggestions.slice(1).map((sug, idx) => `
                   <div class="suggestion-card">
                     <div class="sug-title-row">
-                      <span class="sug-icon">${idx + 1}.</span>
+                      <span class="sug-icon">${idx + 2}.</span>
                       <span>${escapeHtml(sug.title)}</span>
                     </div>
                     <div class="sug-why">${escapeHtml(sug.explanation)}</div>
@@ -2663,9 +3585,9 @@ private updateHtml(): void {
                       <button class="btn ${sug.safe ? 'btn-primary' : ''}"
                               data-action="apply-suggestion"
                               data-finding-id="${escapeHtml(f.id || f.ruleId)}"
-                              data-suggestion-index="${idx}"
+                              data-suggestion-index="${idx + 1}"
                               data-replacement="${escapeHtml(sug.replacement || '')}"
-                              onclick="applySuggestion('${f.id || f.ruleId}', ${idx}, '', event)">
+                              onclick="applySuggestion('${f.id || f.ruleId}', ${idx + 1}, '', event)">
                         ${escapeHtml(sug.actionLabel || (sug.safe ? 'Apply' : 'Replace'))}
                       </button>
                       ${sug.replacement ? `
@@ -2690,7 +3612,7 @@ private updateHtml(): void {
                 Open in Editor
               </button>
               <button class="btn btn-quiet" data-action="reject-finding" data-finding-id="${escapeHtml(f.id || f.ruleId)}" onclick="rejectFinding('${f.id || f.ruleId}', event)">
-                Dismiss
+                Reject
               </button>
             </div>
           </div>
@@ -2753,7 +3675,7 @@ private updateHtml(): void {
                 <span>•</span>
                 <span>Category: ${escapeHtml(r.category)}</span>
                 <span>•</span>
-                <span style="color: #10b981;">Enabled</span>
+                <span style="color: var(--status-success);">Enabled</span>
               </div>
             </div>
           `).join('')}
@@ -3211,7 +4133,7 @@ private updateHtml(): void {
         <div class="skill-safety-status">
           <div>SKILL.md validated</div>
           <div>No arbitrary repository script execution</div>
-          ${skill.hasExecutableAssets ? `<div style="color: #f59e0b;">Bundled scripts are quarantined and not executed.</div>` : ''}
+          ${skill.hasExecutableAssets ? `<div style="color: var(--sev-warning);">Bundled scripts are quarantined and not executed.</div>` : ''}
         </div>
 
         <div class="skill-details-actions">
@@ -3224,7 +4146,7 @@ private updateHtml(): void {
             <button class="btn-control" data-action="open-skill-source" data-skill-id="${escapeHtml(skill.id)}" onclick="openSkillSourceAction('${escapeHtml(skill.id)}', event)">Open Source</button>
           ` : ''}
           ${allowDelete ? `
-            <button class="btn-control delete-btn" style="color: #ef4444;" data-action="delete-skill" data-skill-id="${escapeHtml(skill.id)}" onclick="deleteSkillAction('${escapeHtml(skill.id)}', event)">Remove</button>
+            <button class="btn-control delete-btn" style="color: var(--status-error);" data-action="delete-skill" data-skill-id="${escapeHtml(skill.id)}" onclick="deleteSkillAction('${escapeHtml(skill.id)}', event)">Remove</button>
           ` : ''}
         </div>
       </div>
@@ -3246,9 +4168,20 @@ private updateHtml(): void {
             <span class="checklist-heading">Checklist</span>
             <span class="checklist-count-badge">${total}</span>
           </div>
-          <button class="btn-control" onclick="openChecklistFile()" data-action="open-checklist" title="Open source checklist.md in editor" aria-label="View checklist.md">
-            View checklist.md
-          </button>
+          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            <button class="btn-control" onclick="openChecklistFile()" data-action="open-checklist" title="Open source checklist.md in editor" aria-label="View checklist.md">
+              View checklist.md
+            </button>
+            <button class="btn-control" onclick="openIssuesFile()" data-action="open-issues-file" title="Open source issues.md in editor" aria-label="View issues.md">
+              issues.md
+            </button>
+            <button class="btn-control" onclick="openSuggestionsFile()" data-action="open-suggestions-file" title="Open source suggestions.md in editor" aria-label="View suggestions.md">
+              suggestions.md
+            </button>
+            <button class="btn-control" onclick="openChangesFile()" data-action="open-changes-file" title="Open source changes.md in editor" aria-label="View changes.md">
+              changes.md
+            </button>
+          </div>
         </div>
         <div class="checklist-list" role="list">
           ${checklistItems.map(item => {
@@ -3368,8 +4301,25 @@ private updateHtml(): void {
           <span class="filter-tag">HARD</span>
           <span class="filter-tag">STRICT</span>
         </div>
-        <div style="font-size: 10px; color: var(--muted);">
+        <div style="font-size: 10px; color: var(--muted); margin-bottom: 12px;">
           Auto-Audit on Save & Change
+        </div>
+        <div style="font-size: 11px; font-weight: 600; color: var(--header-fg); margin-bottom: 6px;">
+          Living Project Documents
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <button class="btn-control" style="width: 100%; text-align: left;" onclick="openIssuesFile()" data-action="open-issues-file">
+            View issues.md
+          </button>
+          <button class="btn-control" style="width: 100%; text-align: left;" onclick="openSuggestionsFile()" data-action="open-suggestions-file">
+            View suggestions.md
+          </button>
+          <button class="btn-control" style="width: 100%; text-align: left;" onclick="openChangesFile()" data-action="open-changes-file">
+            View changes.md
+          </button>
+          <button class="btn-control" style="width: 100%; text-align: left;" onclick="openChecklistFile()" data-action="open-checklist">
+            View checklist.md
+          </button>
         </div>
       </div>
     `;

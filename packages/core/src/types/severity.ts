@@ -61,9 +61,9 @@ export function toSemanticSeverity(severity?: string): CanonicalSeverity {
 
 export const SEMANTIC_SEVERITY_MAP: Record<CanonicalSeverity, { label: string; icon: string; color: string; badge: string }> = {
   error: { label: 'Error', icon: '', color: '#ef4444', badge: 'Error' },
-  warning: { label: 'Warning', icon: '', color: '#eab308', badge: 'Warning' },
-  moderate: { label: 'Moderate', icon: '', color: '#f97316', badge: 'Moderate' },
-  info: { label: 'Info', icon: '', color: '#94a3b8', badge: 'Info' },
+  warning: { label: 'Warning', icon: '', color: '#f97316', badge: 'Warning' },
+  moderate: { label: 'Moderate', icon: '', color: '#ea580c', badge: 'Moderate' },
+  info: { label: 'Suggestion', icon: '', color: '#eab308', badge: 'Suggestion' },
 };
 
 export function isSeverityAtLeast(current: Severity, threshold?: Severity): boolean {

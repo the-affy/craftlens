@@ -32,33 +32,33 @@ export const DIAGNOSTIC_DESIGN_TOKENS: Record<DiagnosticSeverityLevel, {
     overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.errorForeground'),
     color: '#ef4444',
   },
-  // High → strong red/orange
+  // High → red
   high: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    border: '1px solid rgba(239, 68, 68, 0.35)',
+    overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.errorForeground'),
+    color: '#ef4444',
+  },
+  // Warning → orange
+  warning: {
+    backgroundColor: 'rgba(249, 115, 22, 0.08)',
+    border: '1px solid rgba(249, 115, 22, 0.35)',
+    overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.warningForeground'),
+    color: '#f97316',
+  },
+  // Moderate / Medium → orange/amber
+  moderate: {
     backgroundColor: 'rgba(234, 88, 12, 0.08)',
     border: '1px solid rgba(234, 88, 12, 0.35)',
     overviewRulerColor: '#ea580c',
     color: '#ea580c',
   },
-  // Warning/Medium → yellow
-  warning: {
-    backgroundColor: 'rgba(234, 179, 8, 0.08)',
-    border: '1px solid rgba(234, 179, 8, 0.35)',
-    overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.warningForeground'),
-    color: '#eab308',
-  },
-  // Moderate → orange
-  moderate: {
-    backgroundColor: 'rgba(249, 115, 22, 0.08)',
-    border: '1px solid rgba(249, 115, 22, 0.35)',
-    overviewRulerColor: '#f97316',
-    color: '#f97316',
-  },
-  // Suggestion/Low → blue/neutral accent
+  // Suggestion / Low → yellow
   suggestion: {
-    backgroundColor: 'rgba(56, 189, 248, 0.06)',
-    border: '1px dashed rgba(56, 189, 248, 0.30)',
-    overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.infoForeground'),
-    color: '#38bdf8',
+    backgroundColor: 'rgba(234, 179, 8, 0.08)',
+    border: '1px dashed rgba(234, 179, 8, 0.35)',
+    overviewRulerColor: '#eab308',
+    color: '#eab308',
   },
 };
 
@@ -205,7 +205,8 @@ export class CraftLensInlineDecorationManager implements vscode.Disposable {
       if (!loc) continue;
 
       const range = mapLocationToVsCodeRange(loc);
-      const level = mapSeverityToDiagnosticLevel(f.severity);
+      const isSecurity = f.category === 'security' || (f.category as any) === 'sec' || (f.ruleId && (f.ruleId.startsWith('SEC-') || /security/i.test(f.ruleId))) || /security|auth|secret|credential|xss|injection|csrf|idor/i.test(f.title || '');
+      const level = isSecurity ? 'critical' : mapSeverityToDiagnosticLevel(f.severity);
 
       // Build compact hover explanation (Section 2)
       const hover = createCompactFindingHover(f, doc.uri);

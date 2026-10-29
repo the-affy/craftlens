@@ -75,6 +75,7 @@ vi.mock('vscode', () => {
     },
     Uri: {
       file: (p: string) => ({ fsPath: p, toString: () => `file://${p}` }),
+      parse: (s: string) => ({ fsPath: s, path: s, scheme: 'craftlens-preview', toString: () => s }),
     },
     StatusBarAlignment: { Left: 1, Right: 2 },
     ThemeColor: class {},
@@ -121,12 +122,14 @@ describe('VS Code Extension: Command Registration & Execution', () => {
   let statusBar: CraftLensStatusBar;
   let commandManager: CommandManager;
   let projectContext: ProjectContext;
+  let tempRoot: string;
 
   beforeEach(() => {
     registeredCommands.clear();
     findingStore = new FindingStore();
-    const tempRoot = path.join(process.cwd(), 'dist', 'test-workspace-' + Math.random().toString(36).substring(7));
+    tempRoot = path.join(process.cwd(), 'dist', 'test-workspace-' + Math.random().toString(36).substring(7));
     fs.mkdirSync(path.join(tempRoot, '.craftlens'), { recursive: true });
+    findingStore.getIssueRegistry().setWorkspaceRoot(tempRoot);
 
     storageManager = new AuditStorageManager(tempRoot);
     configManager = new ConfigurationManager();
@@ -153,6 +156,38 @@ describe('VS Code Extension: Command Registration & Execution', () => {
     expect(registeredCommands.has('craftlens.openMasterChecklist')).toBe(true);
 
     const handler = registeredCommands.get('craftlens.openMasterChecklist')!;
+    await handler();
+
+    expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+    expect(vscode.window.showTextDocument).toHaveBeenCalled();
+  });
+
+  it('registers craftlens.openIssuesFile (and alias openProblemsFile) and successfully opens issues.md', async () => {
+    expect(registeredCommands.has('craftlens.openIssuesFile')).toBe(true);
+    expect(registeredCommands.has('craftlens.openProblemsFile')).toBe(true);
+
+    const handler = registeredCommands.get('craftlens.openIssuesFile')!;
+    await handler();
+
+    expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+    expect(vscode.window.showTextDocument).toHaveBeenCalled();
+  });
+
+  it('registers craftlens.openSuggestionsFile (and alias openSuggestionFile) and successfully opens suggestions.md', async () => {
+    expect(registeredCommands.has('craftlens.openSuggestionsFile')).toBe(true);
+    expect(registeredCommands.has('craftlens.openSuggestionFile')).toBe(true);
+
+    const handler = registeredCommands.get('craftlens.openSuggestionsFile')!;
+    await handler();
+
+    expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+    expect(vscode.window.showTextDocument).toHaveBeenCalled();
+  });
+
+  it('registers craftlens.openChangesFile and successfully opens changes.md', async () => {
+    expect(registeredCommands.has('craftlens.openChangesFile')).toBe(true);
+
+    const handler = registeredCommands.get('craftlens.openChangesFile')!;
     await handler();
 
     expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
@@ -280,6 +315,162 @@ describe('VS Code Extension: Command Registration & Execution', () => {
       'markdown.showPreviewToSide',
       expect.anything()
     );
+  });
+
+  it('registers and executes craftlens.showProjectContext displaying detected stack', async () => {
+    expect(registeredCommands.has('craftlens.showProjectContext')).toBe(true);
+    const handler = registeredCommands.get('craftlens.showProjectContext')!;
+
+    await handler();
+
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Project Context'),
+      expect.anything()
+    );
+  });
+
+  it('registers and executes craftlens.createChangePlan and reviewChangePlan', async () => {
+    expect(registeredCommands.has('craftlens.createChangePlan')).toBe(true);
+    expect(registeredCommands.has('craftlens.reviewChangePlan')).toBe(true);
+
+    const store = diagnosticsAdapter.getFindingStore();
+    const issueRegistry = store.getIssueRegistry();
+    const testFile = path.join(tempRoot, 'src/Button.tsx');
+    fs.mkdirSync(path.dirname(testFile), { recursive: true });
+    fs.writeFileSync(testFile, '<button className="bad" />\n', 'utf-8');
+
+    // Register an issue
+    issueRegistry.registerIssue({
+      id: 'issue-btn-1',
+      fingerprint: 'fp-btn-1',
+      ruleId: 'UI-006',
+      title: 'Bad Button Class',
+      summary: 'Button styling violation',
+      category: 'ui',
+      severity: 'medium',
+      confidence: 0.9,
+      status: 'open',
+      locations: [
+        {
+          filePath: testFile,
+          range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 26 },
+        },
+      ],
+      suggestions: [
+        {
+          id: 'sug-1',
+          title: 'Fix Button Class',
+          description: 'Use standard class',
+          replacement: '<button className="good" />\n',
+        },
+      ],
+      evidence: [],
+      whyItMatters: 'UI consistency',
+      changeIds: [],
+      firstDetectedAt: new Date().toISOString(),
+      lastDetectedAt: new Date().toISOString(),
+    });
+
+    vi.mocked(vscode.window.showQuickPick).mockResolvedValueOnce({
+      label: '$(paintcan) Clean Up Design System',
+      category: 'ui',
+    } as any);
+
+    const createPlanHandler = registeredCommands.get('craftlens.createChangePlan')!;
+    await createPlanHandler();
+
+    const changeManager = commandManager.getChangeManager();
+    const plans = changeManager.getAllPlans();
+    expect(plans.length).toBeGreaterThan(0);
+    const pendingChanges = changeManager.getPendingChanges();
+    expect(pendingChanges.length).toBeGreaterThan(0);
+
+    // Review the change plan
+    const reviewHandler = registeredCommands.get('craftlens.reviewChangePlan')!;
+    await reviewHandler(pendingChanges[0].id);
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'vscode.diff',
+      expect.anything(),
+      expect.anything(),
+      expect.stringContaining('Review:')
+    );
+  });
+
+  it('registers and executes craftlens.approveChange, rejectChange, applyChange, verifyChange, and revertChange', async () => {
+    expect(registeredCommands.has('craftlens.approveChange')).toBe(true);
+    expect(registeredCommands.has('craftlens.rejectChange')).toBe(true);
+    expect(registeredCommands.has('craftlens.applyChange')).toBe(true);
+    expect(registeredCommands.has('craftlens.verifyChange')).toBe(true);
+    expect(registeredCommands.has('craftlens.revertChange')).toBe(true);
+
+    const store = diagnosticsAdapter.getFindingStore();
+    const testFile = path.join(tempRoot, 'src/App.tsx');
+    fs.mkdirSync(path.dirname(testFile), { recursive: true });
+    const originalText = 'const token = "bad";\n';
+    fs.writeFileSync(testFile, originalText, 'utf-8');
+
+    const issueRegistry = store.getIssueRegistry();
+    issueRegistry.registerIssue({
+      id: 'issue-app-sec',
+      fingerprint: 'fp-app-sec',
+      ruleId: 'SEC-001',
+      title: 'Client Token',
+      summary: 'Insecure token in client',
+      category: 'security',
+      severity: 'critical',
+      confidence: 1,
+      status: 'open',
+      locations: [
+        {
+          filePath: testFile,
+          range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 20 },
+        },
+      ],
+      evidence: [],
+      whyItMatters: 'Security leak',
+      changeIds: [],
+      firstDetectedAt: new Date().toISOString(),
+      lastDetectedAt: new Date().toISOString(),
+    });
+
+    const changeManager = commandManager.getChangeManager();
+    const plan = changeManager.createPlan('Security Plan', 'Fix tokens', ['issue-app-sec']);
+    const change = changeManager.proposeChange(
+      plan.id,
+      'Remove client token',
+      'Use env var',
+      ['issue-app-sec'],
+      [
+        {
+          filePath: 'src/App.tsx',
+          additions: 1,
+          deletions: 1,
+          originalContent: originalText,
+          newContent: 'const token = process.env.TOKEN;\n',
+        },
+      ]
+    );
+
+    // Approve
+    const approveHandler = registeredCommands.get('craftlens.approveChange')!;
+    await approveHandler(change.id);
+    expect(changeManager.getChange(change.id)!.status).toBe('approved');
+
+    // Apply
+    const applyHandler = registeredCommands.get('craftlens.applyChange')!;
+    await applyHandler(change.id);
+    expect(fs.readFileSync(testFile, 'utf-8')).toBe('const token = process.env.TOKEN;\n');
+
+    // Verify
+    const verifyHandler = registeredCommands.get('craftlens.verifyChange')!;
+    await verifyHandler(change.id);
+
+    // Revert
+    const revertHandler = registeredCommands.get('craftlens.revertChange')!;
+    await revertHandler(change.id);
+    expect(fs.readFileSync(testFile, 'utf-8')).toBe(originalText);
+    expect(changeManager.getChange(change.id)!.status).toBe('reverted');
   });
 });
 

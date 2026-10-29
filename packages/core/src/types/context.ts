@@ -126,6 +126,7 @@ export interface DesignTokensCollection {
 
 export interface ProjectContext {
   rootPath: string;
+  projectName?: string;
   framework?: string;
   language: 'typescript' | 'javascript';
   packageManager?: string;

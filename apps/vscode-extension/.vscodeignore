@@ -5,11 +5,14 @@ tsconfig.json
 tsconfig.tsbuildinfo
 *.map
 *.tsbuildinfo
+*.vsix
 node_modules/**
 .DS_Store
 .craftlens/**
 .agent/**
 .agents/**
+.claude/**
+.cursor/**
 **/*.log
 .env*
 .cache/**
@@ -17,6 +20,7 @@ node_modules/**
 dist/**/*.d.ts
 dist/**/*.d.ts.map
 dist/**/*.js.map
+dist/*.vsix
 dist/ai/**
 dist/code-actions/**
 dist/codelens/**
@@ -31,3 +35,5 @@ dist/sidebar/**
 dist/status/**
 dist/watcher/**
 dist/test-workspace-*/**
+dist/test-rec-pipeline-*/**
+dist/test-context-*/**

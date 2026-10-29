@@ -61,7 +61,7 @@ export const ID_004_RULE: CraftLensRule = {
         if (!ts.isJsxAttribute(prop)) continue;
         const name = prop.name.getText(sourceFile);
 
-        if (name === 'onClick') {
+        if (name === 'onClick' || name.toLowerCase() === 'onclick') {
           hasOnClick = true;
           const text = prop.initializer ? prop.initializer.getText(sourceFile) : '';
           if (text.includes('() => {}') || text.includes('()=>{}') || text.includes('undefined')) {

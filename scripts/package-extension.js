@@ -14,20 +14,25 @@ const rootPkgPath = path.resolve(rootDir, 'package.json');
 
 // 1. Read extension package.json
 const extPkg = JSON.parse(fs.readFileSync(extPkgPath, 'utf-8'));
-const currentVersion = extPkg.version || '0.1.0';
+const currentVersion = extPkg.version || '1.0.0';
 
 // 2. Determine target version (support --no-bump, --patch, --minor, --major)
 const semverParts = currentVersion.split('.').map(n => parseInt(n, 10));
 if (semverParts.length !== 3 || semverParts.some(isNaN)) {
-  semverParts[0] = 0;
-  semverParts[1] = 1;
+  semverParts[0] = 1;
+  semverParts[1] = 0;
   semverParts[2] = 0;
 }
 
 const args = process.argv.slice(2);
 let newVersion = currentVersion;
 
-if (args.includes('--major')) {
+const versionArgIdx = args.findIndex(a => a === '--version' || a === '-v');
+if (versionArgIdx !== -1 && args[versionArgIdx + 1]) {
+  newVersion = args[versionArgIdx + 1];
+} else if (args[0] && !args[0].startsWith('-') && /^\d+(\.\d+)*(-[\w.]+)?$/.test(args[0])) {
+  newVersion = args[0];
+} else if (args.includes('--major')) {
   semverParts[0] += 1;
   semverParts[1] = 0;
   semverParts[2] = 0;
@@ -42,8 +47,12 @@ if (args.includes('--major')) {
 } else if (args.includes('--no-bump') || args.includes('--release')) {
   newVersion = currentVersion;
 } else {
-  // If no explicit arg provided, preserve currentVersion unless specified
+  // If no explicit bump arg provided, preserve currentVersion
   newVersion = currentVersion;
+}
+
+if (/^\d+\.\d+$/.test(newVersion)) {
+  newVersion = `${newVersion}.0`;
 }
 
 console.log(`\n======================================================`);
@@ -63,30 +72,43 @@ try {
   // Optional root sync
 }
 
-// 4. Ensure output directories exist and clean stale dist files
+// 4. Synchronize documentation & legal assets to extension folder
+const rootReadme = path.resolve(rootDir, 'README.md');
+const extReadme = path.resolve(extDir, 'README.md');
+if (fs.existsSync(rootReadme)) {
+  fs.copyFileSync(rootReadme, extReadme);
+}
+
+const rootLicense = path.resolve(rootDir, 'LICENSE');
+const extLicense = path.resolve(extDir, 'LICENSE');
+if (fs.existsSync(rootLicense)) {
+  fs.copyFileSync(rootLicense, extLicense);
+}
+
+const rootChangelog = path.resolve(rootDir, 'CHANGELOG.md');
+const extChangelog = path.resolve(extDir, 'CHANGELOG.md');
+if (fs.existsSync(rootChangelog)) {
+  fs.copyFileSync(rootChangelog, extChangelog);
+}
+
+// 5. Ensure output directory exists and clean stale dist files
 const extDistDir = path.resolve(extDir, 'dist');
 if (fs.existsSync(extDistDir)) {
   fs.rmSync(extDistDir, { recursive: true, force: true });
 }
 fs.mkdirSync(extDistDir, { recursive: true });
 
-const releaseDir = path.resolve(rootDir, 'release');
-if (!fs.existsSync(releaseDir)) {
-  fs.mkdirSync(releaseDir, { recursive: true });
-}
-
-// 5. Build Extension
+// 6. Build Extension and Monorepo Workspaces
 console.log(`🔨 Compiling extension bundle via esbuild...`);
 execSync('npm run build', {
   cwd: extDir,
   stdio: 'inherit',
 });
 
-// 6. Generate VSIX via vsce
+// 7. Generate VSIX via vsce
 const vsixName = `craftlens-${newVersion}.vsix`;
 const extVsixPath = path.resolve(extDistDir, vsixName);
 const rootVsixPath = path.resolve(rootDir, vsixName);
-const releaseVsixPath = path.resolve(releaseDir, vsixName);
 const rootLatestVsixPath = path.resolve(rootDir, 'craftlens.vsix');
 
 console.log(`📦 Packaging VSIX: ${vsixName}...`);
@@ -95,10 +117,9 @@ execSync(`npx @vscode/vsce package --no-dependencies -o "${extVsixPath}"`, {
   stdio: 'inherit',
 });
 
-// 7. Copy to release directory and root directory for easy access
+// 8. Place packaged VSIX and latest alias in workspace root for direct access
 fs.copyFileSync(extVsixPath, rootVsixPath);
 fs.copyFileSync(extVsixPath, rootLatestVsixPath);
-fs.copyFileSync(extVsixPath, releaseVsixPath);
 
 const stats = fs.statSync(extVsixPath);
 const sizeMb = (stats.size / (1024 * 1024)).toFixed(2);
@@ -107,7 +128,6 @@ console.log(`\n✅ CraftLens Extension packaged successfully!`);
 console.log(`------------------------------------------------------`);
 console.log(`📌 Version:       v${newVersion}`);
 console.log(`📦 VSIX File:     ${vsixName} (${sizeMb} MB)`);
-console.log(`📁 Release Dir:   ${path.relative(rootDir, releaseVsixPath)}`);
-console.log(`📁 Workspace Dir: ${path.relative(rootDir, rootVsixPath)}`);
-console.log(`🔗 Latest Alias:  craftlens.vsix`);
+console.log(`📁 Package Path:  ${path.relative(rootDir, extVsixPath)}`);
+console.log(`🔗 Workspace Link:${path.relative(rootDir, rootLatestVsixPath)}`);
 console.log(`------------------------------------------------------\n`);

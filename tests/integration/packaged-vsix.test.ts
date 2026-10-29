@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSync } from 'node:child_process';
@@ -6,6 +6,12 @@ import { execSync } from 'node:child_process';
 describe('Packaged VSIX Verification', () => {
   const rootDir = path.resolve(__dirname, '../..');
   const vsixPath = path.resolve(rootDir, 'craftlens.vsix');
+
+  beforeAll(() => {
+    if (!fs.existsSync(vsixPath)) {
+      execSync('node scripts/package-extension.js --no-bump', { cwd: rootDir, stdio: 'pipe' });
+    }
+  });
 
   it('verifies that the packaged craftlens.vsix exists and is non-empty', () => {
     expect(fs.existsSync(vsixPath)).toBe(true);

@@ -17,7 +17,7 @@ describe('SkillRegistry, Version Immutability & SkillManager', () => {
       skillManager.initBuiltinSkills(ruleRegistry.getAllRules());
 
       const skills = skillManager.getRegistry().getAllSkills();
-      expect(skills.length).toBe(9);
+      expect(skills.length).toBe(10);
 
       const skillNames = skills.map(s => s.manifest.name);
       expect(skillNames).toContain('craftlens-core');
@@ -29,6 +29,7 @@ describe('SkillRegistry, Version Immutability & SkillManager', () => {
       expect(skillNames).toContain('security');
       expect(skillNames).toContain('frontend-engineering');
       expect(skillNames).toContain('performance');
+      expect(skillNames).toContain('qa-release-assurance');
 
       // Verify each skill has content hash and version 1.0.0
       for (const skill of skills) {

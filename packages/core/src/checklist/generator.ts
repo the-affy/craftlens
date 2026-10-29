@@ -7,8 +7,11 @@ import {
   MasterChecklist,
   MasterChecklistSummary,
   ChangeReview,
+  UserChangeRecord,
 } from '../types/checklist.js';
 import { calculateHealthScore } from '../scoring/scoring.js';
+import { Issue, findingToIssue } from '../types/issue.js';
+import type { Change, ChangeManager } from '../changes/index.js';
 
 export interface CategoryTemplate {
   category: string;
@@ -259,7 +262,8 @@ export function generateMasterChecklist(
   previousChecklist?: MasterChecklist
 ): MasterChecklist {
   const items: ChecklistItem[] = [];
-  const projectName = (projectContext?.rootPath ? projectContext.rootPath.split('/').pop() : (projectContext as any)?.projectName) || 'Workspace';
+  const rootPathStr = typeof projectContext?.rootPath === 'string' ? projectContext.rootPath : typeof (projectContext as any)?.rootPath?.fsPath === 'string' ? (projectContext as any).rootPath.fsPath : undefined;
+  const projectName = (rootPathStr ? rootPathStr.split('/').pop() : (projectContext as any)?.projectName) || 'Workspace';
 
   let errors = 0;
   let warnings = 0;
@@ -385,63 +389,73 @@ export function generateMasterChecklist(
   };
 }
 
-export function formatChecklistMarkdown(checklist: MasterChecklist): string {
-  const dateStr = new Date(checklist.lastAudit).toISOString().split('T')[0];
-  const totalFindings = checklist.summary.errors + checklist.summary.warnings + checklist.summary.suggestions;
+export function formatChecklistMarkdown(checklist: MasterChecklist, findings?: Finding[]): string {
+  const dateStr = new Date(checklist.lastAudit || Date.now()).toISOString().split('T')[0];
+  const totalFindings = (checklist.summary.errors || 0) + (checklist.summary.warnings || 0) + (checklist.summary.suggestions || 0);
   const healthStatusText = checklist.summary.healthGrade || (checklist.summary.errors > 0 ? 'Needs Attention' : checklist.summary.warnings > 0 ? 'Needs Attention' : 'Healthy');
 
   const lines: string[] = [
-    `# CraftLens Master Audit`,
+    `# CraftLens Master Audit Checklist`,
+    `Generated: ${dateStr}`,
     `────────────────────────────────────`,
     `**Project:** ${checklist.projectName}`,
     `**Last Audit:** ${dateStr} | **Level:** \`${typeof checklist.auditLevel === 'string' && checklist.auditLevel.trim() ? checklist.auditLevel.trim().toUpperCase() : 'MODERATE'}\``,
     `**Health:** ${checklist.summary.healthScore} / 100 (${healthStatusText})`,
+    `**Checks:** ${checklist.summary.passed} / ${checklist.summary.total} checks passed`,
     '',
-    `## Checklist Status`,
-    `${checklist.summary.passed} / ${checklist.summary.total} checks passed`,
-    '',
-    `## Findings`,
-    `${totalFindings} issues found`,
-    `• ${checklist.summary.errors} error(s)`,
-    `• ${checklist.summary.warnings} warning(s)`,
-    `• ${checklist.summary.suggestions} suggestion(s)`,
-    '',
-    `────────────────────────────────────`,
   ];
 
-  const failedOrWarning = checklist.items.filter(i => !i.checked && (i.status === 'failed' || i.status === 'warning'));
-  if (failedOrWarning.length > 0) {
-    lines.push(`## Issues Needing Attention`);
-    for (const item of failedOrWarning) {
-      const itemStatus = typeof item.status === 'string' && item.status.trim() ? item.status.trim().toUpperCase() : 'OPEN';
-      const statusBadge = `\`${itemStatus}\``;
-      lines.push(`- [ ] **${item.title}** ${statusBadge} (${item.findingCount || 1} location${(item.findingCount || 1) > 1 ? 's' : ''})`);
-      lines.push(`  > ${item.description}`);
-      if (item.evidence) {
-        lines.push(`  *${item.evidence}*`);
+  if (findings) {
+    lines.push('## Checklist Status', '');
+  }
+
+  // Group items by category (UI / UX, Security, Accessibility, Code Quality, etc.)
+  const categoryMap = new Map<string, ChecklistItem[]>();
+  for (const item of checklist.items) {
+    const rawCat = (item.category || 'General').toLowerCase();
+    let catKey = 'Code Quality';
+    if (rawCat.includes('ui') || rawCat.includes('ux') || rawCat.includes('visual')) catKey = 'UI / UX';
+    else if (rawCat.includes('sec')) catKey = 'Security';
+    else if (rawCat.includes('access') || rawCat.includes('a11y')) catKey = 'Accessibility';
+    else if (rawCat.includes('perf')) catKey = 'Performance';
+    else if (rawCat.includes('arch')) catKey = 'Architecture';
+    else if (rawCat.includes('dep')) catKey = 'Dependencies';
+    else if (rawCat.includes('state')) catKey = 'State & Framework';
+    else if (rawCat.includes('code') || rawCat.includes('qual')) catKey = 'Code Quality';
+
+    if (!categoryMap.has(catKey)) {
+      categoryMap.set(catKey, []);
+    }
+    categoryMap.get(catKey)!.push(item);
+  }
+
+  for (const [catName, items] of categoryMap.entries()) {
+    lines.push(`## ${catName}`);
+    for (const item of items) {
+      if (item.status === 'not-applicable') {
+        lines.push(`- [-] **${item.title}**: ${item.notApplicableReason || 'Not detected in this project'}`);
+      } else {
+        const isChecked = item.checked || item.status === 'passed';
+        const tag = isChecked ? ' `PASSED`' : '';
+        lines.push(`- [${isChecked ? 'x' : ' '}] **${item.title}**${tag}`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (findings) {
+    lines.push('## Findings', '');
+    if (findings.length === 0) {
+      lines.push('No active findings. All checks passing cleanly!', '');
+    } else {
+      for (const f of findings) {
+        lines.push(`- **${f.ruleId || 'ISSUE'}**: ${f.message || f.title || 'Finding'}`);
       }
       lines.push('');
     }
   }
 
-  const passedItems = checklist.items.filter(i => (i.checked || i.status === 'passed') && i.status !== 'not-applicable');
-  if (passedItems.length > 0) {
-    lines.push(`## Passed Checks`);
-    for (const item of passedItems) {
-      lines.push(`- [x] **${item.title}** \`PASSED\``);
-    }
-    lines.push('');
-  }
-
-  const notApplicableItems = checklist.items.filter(i => i.status === 'not-applicable');
-  if (notApplicableItems.length > 0) {
-    lines.push(`## Not Relevant to This Project`);
-    for (const item of notApplicableItems) {
-      lines.push(`- [-] **${item.title}**: ${item.notApplicableReason || 'Not detected in this project'}`);
-    }
-    lines.push('');
-  }
-
+  lines.push('────────────────────────────────────');
   return lines.join('\n');
 }
 
@@ -557,3 +571,371 @@ export function formatChangeReviewMarkdown(review: ChangeReview): string {
   lines.push('────────────────────────────────────');
   return lines.filter(Boolean).join('\n');
 }
+
+function normalizeToIssues(findingsOrIssues: (Finding | Issue)[]): Issue[] {
+  const issues: Issue[] = [];
+  const seen = new Set<string>();
+
+  for (const item of findingsOrIssues) {
+    if (!item) continue;
+    let issue: Issue;
+    if ((item as any).fingerprint && (item as any).status && Array.isArray((item as any).locations)) {
+      issue = item as Issue;
+    } else {
+      issue = findingToIssue(item as Finding);
+    }
+    const key = issue.fingerprint || issue.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    issues.push(issue);
+  }
+  return issues;
+}
+
+function formatCategoryName(category?: string, ruleId?: string): string {
+  const c = (category || '').toLowerCase().trim();
+  const r = (ruleId || '').toUpperCase().trim();
+  if (c.includes('sec') || r.startsWith('SEC')) return 'Security';
+  if (c.includes('access') || c.includes('a11y') || r.startsWith('AX')) return 'Accessibility';
+  if (c.includes('perf') || r.startsWith('PERF') || r === 'CSS-005') return 'Performance';
+  if (c.includes('backend') || c.includes('api') || r.startsWith('BE') || r.startsWith('API')) return 'Backend/Technology';
+  if (c.includes('dep') || r.startsWith('DEP')) return 'Dependency';
+  if (c.includes('ui') || c.includes('ux') || c.includes('visual') || r.startsWith('UI') || r.startsWith('UX') || r.startsWith('VH') || r.startsWith('CP') || r.startsWith('CL') || r.startsWith('ID') || r.startsWith('LY') || r.startsWith('CX')) return 'UI/UX';
+  return 'Quality';
+}
+
+function formatSeverityName(sev?: string): string {
+  const s = (sev || '').toLowerCase().trim();
+  if (s === 'critical' || s === 'blocker') return 'Critical';
+  if (s === 'high' || s === 'error') return 'High';
+  if (s === 'medium' || s === 'warning' || s === 'moderate') return 'Medium';
+  if (s === 'low' || s === 'info') return 'Low';
+  if (s === 'suggestion' || s === 'hint') return 'Suggestion';
+  return 'Medium';
+}
+
+function formatStatusName(status?: string): string {
+  const s = (status || '').toLowerCase().trim();
+  switch (s) {
+    case 'open': return 'Open';
+    case 'planned': return 'Planned';
+    case 'proposed': return 'Proposed';
+    case 'review': return 'In Review';
+    case 'applied': return 'Applied';
+    case 'verifying': return 'Verifying';
+    case 'resolved': return 'Resolved';
+    case 'rejected': return 'Rejected';
+    case 'ignored': return 'Ignored';
+    case 'accepted-risk': return 'Accepted Risk';
+    case 'needs-revalidation': return 'Needs Revalidation';
+    default: return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Open';
+  }
+}
+
+export function formatIssuesMarkdown(
+  findingsOrIssues: (Finding | Issue)[],
+  projectName: string = 'Project'
+): string {
+  const allIssues = normalizeToIssues(findingsOrIssues);
+  const dateStr = new Date().toISOString().split('T')[0];
+
+  const resolvedStatuses = new Set(['resolved', 'applied', 'rejected', 'ignored', 'accepted-risk']);
+  const openIssues = allIssues.filter(i => !resolvedStatuses.has((i.status || 'open').toLowerCase()));
+  const resolvedIssues = allIssues.filter(i => resolvedStatuses.has((i.status || 'open').toLowerCase()));
+
+  const lines: string[] = [
+    '# CraftLens Issues',
+    `Generated: ${dateStr}`,
+    '',
+    '## Open Issues',
+    '',
+  ];
+
+  if (openIssues.length === 0) {
+    lines.push('No open issues detected.', 'All quality, security, and architectural checks are currently passing!', '');
+  } else {
+    openIssues.forEach((issue, idx) => {
+      const sev = formatSeverityName(issue.severity);
+      const cat = formatCategoryName(issue.category, issue.ruleId);
+      const status = formatStatusName(issue.status);
+
+      lines.push(`### ${issue.title || issue.ruleId || 'Detected Issue'}`);
+      if (issue.ruleId && issue.ruleId !== 'UNKNOWN') {
+        lines.push(`- Rule: \`${issue.ruleId}\``);
+      }
+      lines.push(`- Severity: ${sev}`);
+      lines.push(`- Category: ${cat}`);
+      lines.push(`- Status: ${status}`);
+
+      if (issue.locations && issue.locations.length > 1) {
+        lines.push('Locations:');
+        for (const loc of issue.locations) {
+          const line = loc.range?.startLine || 1;
+          lines.push(`- \`${loc.filePath}:${line}\``);
+        }
+      } else {
+        const primaryLoc = issue.locations?.[0];
+        const filePath = primaryLoc?.filePath || issue.filePath || 'unknown file';
+        const line = primaryLoc?.range?.startLine || issue.startLine || 1;
+        lines.push(`- Location: \`${filePath}:${line}\``);
+      }
+
+      if (typeof issue.confidence === 'number' && issue.confidence > 0) {
+        lines.push(`- Confidence: ${Math.round(issue.confidence * 100)}%`);
+      }
+
+      lines.push('');
+      lines.push('#### What is wrong');
+      lines.push(issue.whatIsWrong || issue.summary || issue.message || 'Issue detected in active source file.');
+      lines.push('');
+      lines.push('#### Why it matters');
+      lines.push(issue.whyItMatters || issue.why || 'Affects software reliability, maintainability, or design integrity.');
+      lines.push('');
+      lines.push('#### Suggested remediation');
+      lines.push('See `suggestions.md`.');
+
+      if (idx < openIssues.length - 1) {
+        lines.push('', '---', '');
+      } else {
+        lines.push('');
+      }
+    });
+  }
+
+  if (resolvedIssues.length > 0) {
+    lines.push('## Resolved Issues', '');
+    resolvedIssues.forEach((issue, idx) => {
+      const sev = formatSeverityName(issue.severity);
+      const cat = formatCategoryName(issue.category, issue.ruleId);
+      const status = formatStatusName(issue.status);
+
+      lines.push(`### ${issue.title || issue.ruleId || 'Resolved Issue'}`);
+      if (issue.ruleId && issue.ruleId !== 'UNKNOWN') {
+        lines.push(`- Rule: \`${issue.ruleId}\``);
+      }
+      lines.push(`- Severity: ${sev}`);
+      lines.push(`- Category: ${cat}`);
+      lines.push(`- Status: ${status}`);
+
+      if (issue.locations && issue.locations.length > 1) {
+        lines.push('Locations:');
+        for (const loc of issue.locations) {
+          const line = loc.range?.startLine || 1;
+          lines.push(`- \`${loc.filePath}:${line}\``);
+        }
+      } else {
+        const primaryLoc = issue.locations?.[0];
+        const filePath = primaryLoc?.filePath || issue.filePath || 'unknown file';
+        const line = primaryLoc?.range?.startLine || issue.startLine || 1;
+        lines.push(`- Location: \`${filePath}:${line}\``);
+      }
+
+      lines.push('');
+      lines.push('#### What is wrong');
+      lines.push(issue.whatIsWrong || issue.summary || issue.message || 'Previously detected issue.');
+      lines.push('');
+      lines.push('#### Why it matters');
+      lines.push(issue.whyItMatters || issue.why || 'Resolved issue preserved for historical record.');
+
+      if (idx < resolvedIssues.length - 1) {
+        lines.push('', '---', '');
+      } else {
+        lines.push('');
+      }
+    });
+  }
+
+  return lines.join('\n') + '\n';
+}
+
+export function formatSuggestionsMarkdown(
+  findingsOrIssues: (Finding | Issue)[],
+  projectName: string = 'Project'
+): string {
+  const allIssues = normalizeToIssues(findingsOrIssues);
+  const dateStr = new Date().toISOString().split('T')[0];
+
+  const lines: string[] = [
+    '# CraftLens Suggestions',
+    `Generated: ${dateStr}`,
+    '',
+  ];
+
+  if (allIssues.length === 0) {
+    lines.push(
+      '## Status',
+      'No open suggestions at this time.',
+      'Codebase adheres to current recommended design tokens, hierarchy, and coding conventions.'
+    );
+    return lines.join('\n') + '\n';
+  }
+
+  allIssues.forEach((issue, idx) => {
+    const title = issue.title || issue.problemTitle || issue.ruleId || 'Quality Suggestion';
+    const issueId = issue.id || issue.fingerprint || `issue-${idx + 1}`;
+
+    lines.push(`## ${title}`);
+    lines.push(`Issue ID: \`${issueId}\``);
+    lines.push('');
+
+    // Suggested Fix
+    const suggestedFix =
+      issue.recommendation ||
+      issue.howToFix ||
+      issue.fix?.title ||
+      issue.designFix?.title ||
+      'Address the underlying code pattern to align with project conventions.';
+    lines.push('### Suggested Fix');
+    lines.push(suggestedFix);
+    lines.push('');
+
+    // Why
+    const why =
+      issue.whyItMatters ||
+      issue.why ||
+      issue.summary ||
+      'Improves codebase clarity, maintainability, and user experience.';
+    lines.push('### Why');
+    lines.push(why);
+    lines.push('');
+
+    // Skill or Source
+    if (issue.skillId) {
+      const cleanSkill = issue.skillId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      lines.push('### Skill');
+      lines.push(cleanSkill);
+    } else {
+      lines.push('### Source');
+      lines.push('CraftLens built-in rule');
+    }
+    lines.push('');
+
+    // Automatic Fix availability
+    let autoFixStatus = 'Not available';
+    if (issue.fix?.kind === 'safe' || issue.autoFixAvailable) {
+      autoFixStatus = 'Automatic fix available';
+    } else if (issue.skillId) {
+      autoFixStatus = 'Skill-assisted fix available';
+    } else {
+      autoFixStatus = 'Recommendation only';
+    }
+    lines.push('### Automatic Fix');
+    lines.push(autoFixStatus);
+    lines.push('');
+
+    // Recommended Approach
+    const recommendedApproach =
+      issue.howToFix ||
+      (issue.suggestions && (issue.suggestions[0] as any)?.message) ||
+      (issue.recommendations && (issue.recommendations[0] as any)?.action) ||
+      'Use the existing design system tokens and components instead of introducing another visual treatment.';
+    lines.push('### Recommended Approach');
+    lines.push(recommendedApproach);
+
+    if (idx < allIssues.length - 1) {
+      lines.push('', '---', '');
+    } else {
+      lines.push('');
+    }
+  });
+
+  return lines.join('\n') + '\n';
+}
+
+export function formatUserChangesMarkdown(
+  changes: UserChangeRecord[],
+  projectName: string = 'Project',
+  changeManager?: ChangeManager
+): string {
+  const lines: string[] = [
+    '# CraftLens Changes',
+    '',
+  ];
+
+  if (changes.length > 0) {
+    lines.push(`**Total Changes Recorded:** ${changes.length}`, '');
+  }
+
+  // Optional section: Changes Pending Review
+  const proposedChanges = changeManager
+    ? changeManager.getAllChanges().filter(c => c.status === 'proposed' || c.status === 'review' || c.status === 'approved')
+    : [];
+
+  if (proposedChanges.length > 0) {
+    lines.push('## Changes Pending Review', '');
+    proposedChanges.forEach(p => {
+      const primaryFile = p.files?.[0]?.filePath || 'unknown file';
+      const adds = p.files?.[0]?.additions || 0;
+      const dels = p.files?.[0]?.deletions || 0;
+      lines.push(`### Proposed: ${p.title}`);
+      lines.push(`- Issue: \`${p.issueIds?.[0] || 'issue-pending'}\``);
+      lines.push(`- Change: \`${p.id}\``);
+      lines.push(`- File: \`${primaryFile}\``);
+      lines.push(`- Status: Proposed`);
+      lines.push(`- Lines changed: +${adds} / -${dels}`);
+      lines.push('');
+      lines.push('#### Why');
+      lines.push(p.explanation || 'Proposed change awaiting user review and application.');
+      lines.push('');
+    });
+  }
+
+  if (changes.length === 0 && proposedChanges.length === 0) {
+    lines.push(
+      '## Change History',
+      'No applied changes recorded yet.',
+      'Active workspace modifications, editor saves, and applied quick fixes will appear here sequentially.'
+    );
+    return lines.join('\n') + '\n';
+  }
+
+  if (changes.length > 0) {
+    // Group applied/reverted changes by date
+    const dateMap = new Map<string, UserChangeRecord[]>();
+    // Render most recent first
+    const reversed = [...changes].reverse();
+    for (const c of reversed) {
+      const d = new Date(c.timestamp || Date.now()).toISOString().split('T')[0];
+      if (!dateMap.has(d)) {
+        dateMap.set(d, []);
+      }
+      dateMap.get(d)!.push(c);
+    }
+
+    for (const [dateStr, records] of dateMap.entries()) {
+      lines.push(`## ${dateStr}`, '');
+      for (const c of records) {
+        const actionPrefix = c.status === 'reverted' ? 'Reverted' : (c.status === 'verified' ? 'Verified' : 'Applied');
+        const summary = c.summary || `Applied change ${c.id}`;
+        const primaryFile = c.filesChanged?.[0] || 'unknown file';
+        const adds = c.linesAdded !== undefined ? c.linesAdded : 0;
+        const dels = c.linesRemoved !== undefined ? c.linesRemoved : 0;
+        const statusLabel = c.status === 'reverted' ? 'Reverted' : (c.status === 'verified' ? 'Verified' : 'Applied');
+        const issueId = c.issueId || c.resolvedFindings?.[0]?.ruleId || 'issue-resolved';
+
+        lines.push(`### ${actionPrefix}: ${summary}`);
+        lines.push(`- Issue: \`${issueId}\``);
+        lines.push(`- Change: \`${c.id}\``);
+        lines.push(`- File: \`${primaryFile}\``);
+        lines.push(`- Status: ${statusLabel}`);
+        lines.push(`- Lines changed: +${adds} / -${dels}`);
+        lines.push('');
+        lines.push('#### Why');
+        lines.push(c.summary || 'Applied approved improvement to satisfy project standards.');
+        lines.push('');
+        lines.push('#### Verification');
+        const isVerPassed = c.verification?.status === 'passed' || c.status === 'verified';
+        lines.push(`- CraftLens audit: ${isVerPassed ? 'Passed' : 'Pending'}`);
+        lines.push(`- Relevant UI rule: ${isVerPassed ? 'Passed' : 'Pending'}`);
+        lines.push('');
+      }
+    }
+  }
+
+  return lines.join('\n') + '\n';
+}
+
+// Backward-compatible aliases to maintain full interoperability
+export const formatProblemsMarkdown = formatIssuesMarkdown;
+export const formatSuggestionMarkdown = formatSuggestionsMarkdown;
+export const formatSolutionsMarkdown = formatSuggestionsMarkdown;

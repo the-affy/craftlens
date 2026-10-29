@@ -32,7 +32,7 @@ export interface Suggestion {
   type: 'autofix' | 'replace' | 'insert' | 'refactor' | 'manual';
   confidence: number;
   patch?: string;
-  actionLabel?: 'Apply' | 'Replace' | 'Insert' | 'Open suggestion' | 'Copy fix' | 'Keep value' | 'Use existing token';
+  actionLabel?: 'Apply' | 'Apply Fix' | 'Suggested Fix' | 'Manual fix' | 'Replace' | 'Insert' | 'Open suggestion' | 'Copy fix' | 'Keep value' | 'Use existing token';
   safe?: boolean;
   previewDiff?: string;
   replacement?: string;
@@ -181,6 +181,7 @@ export interface Finding {
   relatedLocations?: SourceLocation[];
   evidence: Evidence[] | any[];
   findingType?: FindingType;
+  type?: FindingType;
   fingerprint?: string;
   recommendation?: string;
   recommendations?: DesignRecommendation[];

@@ -93,3 +93,31 @@ export interface ChangeReview {
 
   potentialConcerns: string[];
 }
+
+export interface UserChangeRecord {
+  id: string;
+  timestamp: number;
+  filesChanged: string[];
+  linesAdded?: number;
+  linesRemoved?: number;
+  summary?: string;
+  source?: 'editor-save' | 'quick-fix' | 'change-plan' | 'manual-edit';
+  status?: 'proposed' | 'applied' | 'verified' | 'reverted';
+  issueId?: string;
+  verification?: {
+    status?: 'passed' | 'failed' | 'pending';
+    details?: string;
+    timestamp?: number;
+  };
+  resolvedFindings?: { ruleId: string; message?: string; filePath?: string }[];
+  newFindings?: { ruleId: string; message?: string; filePath?: string }[];
+  qualityScores?: {
+    code?: number;
+    architecture?: number;
+    ux?: number;
+    accessibility?: number;
+    security?: number;
+    aiSlop?: number;
+    design?: number;
+  };
+}

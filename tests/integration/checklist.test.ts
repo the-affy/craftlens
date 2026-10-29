@@ -98,7 +98,7 @@ describe('Master Audit Checklist & Change Review', () => {
     expect(effectItem?.status).toBe('not-applicable');
   });
 
-  it('persists audit.json and checklist.md to disk via AuditStorageManager', () => {
+  it('persists audit.json, checklist.md, issues.md, suggestions.md, and changes.md to disk via AuditStorageManager', () => {
     const storage = new AuditStorageManager(testWorkspace);
     const ctx = createDefaultProjectContext(testWorkspace);
 
@@ -106,7 +106,12 @@ describe('Master Audit Checklist & Change Review', () => {
 
     expect(fs.existsSync(path.join(testWorkspace, '.craftlens/audit.json'))).toBe(true);
     expect(fs.existsSync(path.join(testWorkspace, '.craftlens/checklist.md'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/issues.md'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/suggestions.md'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/changes.md'))).toBe(true);
     expect(fs.existsSync(path.join(testWorkspace, '.craftlens/history.json'))).toBe(true);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/problems.md'))).toBe(false);
+    expect(fs.existsSync(path.join(testWorkspace, '.craftlens/suggestion.md'))).toBe(false);
 
     const savedAudit = storage.loadAudit();
     expect(savedAudit?.projectName).toBe(path.basename(testWorkspace));
@@ -115,6 +120,53 @@ describe('Master Audit Checklist & Change Review', () => {
     const md = fs.readFileSync(path.join(testWorkspace, '.craftlens/checklist.md'), 'utf-8');
     expect(md).toContain('# CraftLens Master Audit');
     expect(md).toContain('PASSED');
+
+    const issuesMd = fs.readFileSync(path.join(testWorkspace, '.craftlens/issues.md'), 'utf-8');
+    expect(issuesMd).toContain('# CraftLens Issues');
+
+    const suggestionsMd = fs.readFileSync(path.join(testWorkspace, '.craftlens/suggestions.md'), 'utf-8');
+    expect(suggestionsMd).toContain('# CraftLens Suggestions');
+
+    const changesMd = fs.readFileSync(path.join(testWorkspace, '.craftlens/changes.md'), 'utf-8');
+    expect(changesMd).toContain('# CraftLens Changes');
+  });
+
+  it('records user changes and updates changes.md sequentially over time', () => {
+    const storage = new AuditStorageManager(testWorkspace);
+
+    storage.appendUserChange({
+      id: 'chg_1',
+      timestamp: Date.now() - 5000,
+      filesChanged: ['src/App.tsx'],
+      linesAdded: 10,
+      linesRemoved: 2,
+      resolvedFindings: [{ ruleId: 'AP-008', message: 'Swallowed error' }],
+      newFindings: [],
+      source: 'editor-save',
+    });
+
+    storage.appendUserChange({
+      id: 'chg_2',
+      timestamp: Date.now(),
+      filesChanged: ['src/Button.tsx'],
+      linesAdded: 3,
+      linesRemoved: 1,
+      resolvedFindings: [{ ruleId: 'UI-006', message: 'Button margin' }],
+      newFindings: [],
+      source: 'quick-fix',
+    });
+
+    const changes = storage.loadUserChanges();
+    expect(changes.length).toBe(2);
+    expect(changes[0].filesChanged).toContain('src/App.tsx');
+    expect(changes[1].filesChanged).toContain('src/Button.tsx');
+
+    const md = fs.readFileSync(path.join(testWorkspace, '.craftlens/changes.md'), 'utf-8');
+    expect(md).toContain('**Total Changes Recorded:** 2');
+    expect(md).toContain('src/App.tsx');
+    expect(md).toContain('src/Button.tsx');
+    expect(md).toContain('AP-008');
+    expect(md).toContain('UI-006');
   });
 
   it('generates a concise change review distinguishing new vs resolved findings', () => {

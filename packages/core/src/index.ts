@@ -22,3 +22,8 @@ export * from './skills/skill-recommender.js';
 export * from './recommendations/context-aware-fix-generator.js';
 export * from './rules/user-rule-manager.js';
 export * from './skills/discovery.js';
+export * from './issue-registry/index.js';
+export * from './changes/index.js';
+export * from './verification/index.js';
+export * from './validation/index.js';
+export * from './qa/index.js';

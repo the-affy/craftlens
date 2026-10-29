@@ -3,21 +3,38 @@ import * as path from 'node:path';
 import { AuditLevel } from '../types/audit-level.js';
 import { Finding } from '../types/finding.js';
 import { ProjectContext } from '../types/context.js';
+import { Issue } from '../types/issue.js';
+import type { ChangeManager } from '../changes/index.js';
 import {
   AuditHistoryEntry,
   MasterChecklist,
+  UserChangeRecord,
 } from '../types/checklist.js';
 import {
   formatChecklistMarkdown,
   generateMasterChecklist,
+  formatIssuesMarkdown,
+  formatSuggestionsMarkdown,
+  formatUserChangesMarkdown,
+  formatProblemsMarkdown,
+  formatSuggestionMarkdown,
 } from './generator.js';
 
 export class AuditStorageManager {
   private baseDir: string;
+  private workspaceRoot: string;
   private inMemoryAudit: MasterChecklist | null = null;
+  private inMemoryHistory: AuditHistoryEntry[] | null = null;
+  private inMemoryChanges: UserChangeRecord[] | null = null;
+  private lastWrittenContent = new Map<string, string>();
 
   constructor(workspaceRoot: string) {
+    this.workspaceRoot = workspaceRoot;
     this.baseDir = path.join(workspaceRoot, '.craftlens');
+  }
+
+  public getWorkspaceRoot(): string {
+    return this.workspaceRoot;
   }
 
   public getDirectory(): string {
@@ -26,7 +43,11 @@ export class AuditStorageManager {
 
   public ensureDir(): void {
     if (!fs.existsSync(this.baseDir)) {
-      fs.mkdirSync(this.baseDir, { recursive: true });
+      try {
+        fs.mkdirSync(this.baseDir, { recursive: true });
+      } catch {
+        // In virtual or test environments where directory creation might fail
+      }
     }
   }
 
@@ -54,7 +75,7 @@ export class AuditStorageManager {
         fs.writeFileSync(filePath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
       }
     } catch (e) {
-      console.error('Failed to initialize .craftlens/config.json:', e);
+      // In virtual or test environments
     }
   }
 
@@ -81,7 +102,7 @@ export class AuditStorageManager {
         'utf-8'
       );
     } catch (e) {
-      console.error('Failed to write .craftlens/skills.json:', e);
+      // In virtual environments
     }
   }
 
@@ -111,11 +132,12 @@ export class AuditStorageManager {
         );
       }
     } catch (e) {
-      console.error('Failed to write .craftlens/suppressions.json:', e);
+      // In virtual environments
     }
   }
 
   public loadAudit(): MasterChecklist | null {
+    if (this.inMemoryAudit) return this.inMemoryAudit;
     try {
       const filePath = path.join(this.baseDir, 'audit.json');
       if (fs.existsSync(filePath)) {
@@ -125,95 +147,272 @@ export class AuditStorageManager {
         return parsed;
       }
     } catch (e) {
-      console.warn('Failed to read audit.json:', e);
+      // Failed to read audit.json
     }
     return this.inMemoryAudit;
   }
 
   public saveAudit(checklist: MasterChecklist): void {
     this.inMemoryAudit = checklist;
+    const jsonStr = JSON.stringify(checklist, null, 2);
+    if (this.lastWrittenContent.get('audit.json') === jsonStr) {
+      return;
+    }
+    this.lastWrittenContent.set('audit.json', jsonStr);
     try {
       this.ensureDir();
-      fs.writeFileSync(
-        path.join(this.baseDir, 'audit.json'),
-        JSON.stringify(checklist, null, 2),
-        'utf-8'
-      );
+      fs.writeFileSync(path.join(this.baseDir, 'audit.json'), jsonStr, 'utf-8');
     } catch (e) {
       // In virtual or test environments where directory creation might fail, in-memory state is preserved
     }
   }
 
   public loadHistory(): AuditHistoryEntry[] {
+    if (this.inMemoryHistory) return this.inMemoryHistory;
     try {
       const filePath = path.join(this.baseDir, 'history.json');
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, 'utf-8');
-        return JSON.parse(raw) as AuditHistoryEntry[];
+        const parsed = JSON.parse(raw) as AuditHistoryEntry[];
+        this.inMemoryHistory = parsed;
+        return parsed;
       }
     } catch (e) {
-      console.warn('Failed to read history.json:', e);
+      // Failed to read history.json
     }
     return [];
   }
 
   public appendHistory(entry: AuditHistoryEntry): void {
     try {
-      this.ensureDir();
-      const history = this.loadHistory();
+      const history = [...this.loadHistory()];
       history.push(entry);
       // Keep last 100 audits
       if (history.length > 100) {
         history.shift();
       }
-      fs.writeFileSync(
-        path.join(this.baseDir, 'history.json'),
-        JSON.stringify(history, null, 2),
-        'utf-8'
-      );
+      this.inMemoryHistory = history;
+      const jsonStr = JSON.stringify(history, null, 2);
+      if (this.lastWrittenContent.get('history.json') !== jsonStr) {
+        this.lastWrittenContent.set('history.json', jsonStr);
+        this.ensureDir();
+        fs.writeFileSync(path.join(this.baseDir, 'history.json'), jsonStr, 'utf-8');
+      }
     } catch (e) {
-      console.error('Failed to write history.json:', e);
+      // ignore
+    }
+  }
+
+  public removeObsoleteFile(filename: string): void {
+    try {
+      const p = path.join(this.baseDir, filename);
+      if (fs.existsSync(p)) {
+        fs.unlinkSync(p);
+      }
+      if (this.workspaceRoot && this.workspaceRoot !== '/' && !this.workspaceRoot.endsWith('.craftlens')) {
+        const rootP = path.join(this.workspaceRoot, filename);
+        if (fs.existsSync(rootP)) {
+          fs.unlinkSync(rootP);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private writeFileSafe(filename: string, content: string, mirrorToRoot = false): void {
+    if (this.lastWrittenContent.get(filename) === content) {
+      return;
+    }
+    this.lastWrittenContent.set(filename, content);
+    try {
+      this.ensureDir();
+      fs.writeFileSync(path.join(this.baseDir, filename), content, 'utf-8');
+      if (mirrorToRoot && this.workspaceRoot && this.workspaceRoot !== '/' && !this.workspaceRoot.endsWith('.craftlens')) {
+        try {
+          fs.writeFileSync(path.join(this.workspaceRoot, filename), content, 'utf-8');
+        } catch {
+          // ignore root mirror error in virtual/test setups
+        }
+      }
+    } catch (e) {
+      // ignore write error in virtual/restricted environments
     }
   }
 
   public saveChecklistMarkdown(markdown: string): void {
-    try {
-      this.ensureDir();
-      fs.writeFileSync(
-        path.join(this.baseDir, 'checklist.md'),
-        markdown,
-        'utf-8'
-      );
-    } catch (e) {
-      console.error('Failed to write checklist.md:', e);
-    }
+    this.writeFileSafe('checklist.md', markdown);
+  }
+
+  public saveIssuesMarkdown(markdown: string): void {
+    this.writeFileSafe('issues.md', markdown);
+    this.removeObsoleteFile('problems.md');
+  }
+
+  public saveProblemsMarkdown(markdown: string): void {
+    this.saveIssuesMarkdown(markdown);
+  }
+
+  public saveSuggestionsMarkdown(markdown: string): void {
+    this.writeFileSafe('suggestions.md', markdown);
+    this.removeObsoleteFile('suggestion.md');
+    this.removeObsoleteFile('solutions.md');
+  }
+
+  public saveSuggestionMarkdown(markdown: string): void {
+    this.saveSuggestionsMarkdown(markdown);
+  }
+
+  public saveSolutionsMarkdown(markdown: string): void {
+    this.saveSuggestionsMarkdown(markdown);
+  }
+
+  public saveChangesMarkdown(markdown: string): void {
+    this.writeFileSafe('changes.md', markdown);
   }
 
   public saveChangeReview(markdown: string): void {
+    this.writeFileSafe('change-review.md', markdown);
+  }
+
+  public loadUserChanges(): UserChangeRecord[] {
+    if (this.inMemoryChanges) return this.inMemoryChanges;
+    try {
+      const filePath = path.join(this.baseDir, 'changes.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        const res = Array.isArray(parsed) ? parsed : [];
+        this.inMemoryChanges = res;
+        return res;
+      }
+    } catch (e) {
+      // Failed to read changes.json
+    }
+    return [];
+  }
+
+  public appendUserChange(change: UserChangeRecord, projectName?: string, changeManager?: ChangeManager): void {
+    try {
+      const changes = [...this.loadUserChanges()];
+      const existingIdx = changes.findIndex(c => c.id === change.id);
+      if (existingIdx !== -1) {
+        changes[existingIdx] = {
+          ...changes[existingIdx],
+          ...change,
+        };
+      } else {
+        // Debounce duplicate recordings for identical files within 1.5 seconds
+        const last = changes[changes.length - 1];
+        if (
+          last &&
+          Date.now() - last.timestamp < 1500 &&
+          JSON.stringify(last.filesChanged) === JSON.stringify(change.filesChanged)
+        ) {
+          changes[changes.length - 1] = {
+            ...last,
+            ...change,
+            timestamp: last.timestamp,
+          };
+        } else {
+          changes.push(change);
+        }
+      }
+
+      if (changes.length > 150) {
+        changes.shift();
+      }
+
+      this.inMemoryChanges = changes;
+      const jsonStr = JSON.stringify(changes, null, 2);
+      if (this.lastWrittenContent.get('changes.json') !== jsonStr) {
+        this.lastWrittenContent.set('changes.json', jsonStr);
+        this.ensureDir();
+        fs.writeFileSync(path.join(this.baseDir, 'changes.json'), jsonStr, 'utf-8');
+      }
+
+      const md = formatUserChangesMarkdown(changes, projectName || 'Project', changeManager);
+      this.saveChangesMarkdown(md);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  public ensureDefaultFiles(
+    projectContext?: ProjectContext,
+    findings: (Finding | Issue)[] = [],
+    changeManager?: ChangeManager
+  ): void {
     try {
       this.ensureDir();
-      fs.writeFileSync(
-        path.join(this.baseDir, 'change-review.md'),
-        markdown,
-        'utf-8'
-      );
+      const projName = projectContext?.projectName || 'Project';
+
+      // Clean up deprecated legacy file names
+      this.removeObsoleteFile('problems.md');
+      this.removeObsoleteFile('suggestion.md');
+      this.removeObsoleteFile('solutions.md');
+
+      // 1. checklist.md
+      const checklistPath = path.join(this.baseDir, 'checklist.md');
+      if (!fs.existsSync(checklistPath)) {
+        const audit = this.getOrInitAudit(projectContext, findings as Finding[]);
+        this.saveChecklistMarkdown(formatChecklistMarkdown(audit));
+      }
+
+      // 2. issues.md
+      const issuesPath = path.join(this.baseDir, 'issues.md');
+      if (!fs.existsSync(issuesPath)) {
+        this.saveIssuesMarkdown(formatIssuesMarkdown(findings, projName));
+      }
+
+      // 3. suggestions.md
+      const suggestionsPath = path.join(this.baseDir, 'suggestions.md');
+      if (!fs.existsSync(suggestionsPath)) {
+        this.saveSuggestionsMarkdown(formatSuggestionsMarkdown(findings, projName));
+      }
+
+      // 4. changes.md
+      const changesPath = path.join(this.baseDir, 'changes.md');
+      if (!fs.existsSync(changesPath)) {
+        const userChanges = this.loadUserChanges();
+        this.saveChangesMarkdown(formatUserChangesMarkdown(userChanges, projName, changeManager));
+      }
     } catch (e) {
-      console.error('Failed to write change-review.md:', e);
+      console.warn('Failed to ensure default CraftLens markdown files:', e);
     }
   }
 
   public syncAudit(
     projectContext: ProjectContext,
-    findings: Finding[],
-    auditLevel: AuditLevel = 'moderate'
+    findings: (Finding | Issue)[] = [],
+    auditLevel: AuditLevel = 'moderate',
+    changeManager?: ChangeManager
   ): { checklist: MasterChecklist; historyEntry: AuditHistoryEntry } {
     const previousAudit = this.loadAudit();
-    const checklist = generateMasterChecklist(projectContext, findings, auditLevel, previousAudit || undefined);
+    const checklist = generateMasterChecklist(projectContext, findings as Finding[], auditLevel, previousAudit || undefined);
 
     // Save JSON and Markdown
     this.saveAudit(checklist);
     const md = formatChecklistMarkdown(checklist);
     this.saveChecklistMarkdown(md);
+
+    // Clean up obsolete files
+    this.removeObsoleteFile('problems.md');
+    this.removeObsoleteFile('suggestion.md');
+    this.removeObsoleteFile('solutions.md');
+
+    // Save issues.md and suggestions.md
+    const projName = projectContext?.projectName || 'Project';
+    const issuesMd = formatIssuesMarkdown(findings, projName);
+    this.saveIssuesMarkdown(issuesMd);
+
+    const suggestionsMd = formatSuggestionsMarkdown(findings, projName);
+    this.saveSuggestionsMarkdown(suggestionsMd);
+
+    // Save changes.md
+    const userChanges = this.loadUserChanges();
+    const changesMd = formatUserChangesMarkdown(userChanges, projName, changeManager);
+    this.saveChangesMarkdown(changesMd);
 
     // Calculate changes for history entry
     const history = this.loadHistory();
@@ -247,7 +446,7 @@ export class AuditStorageManager {
   ): MasterChecklist {
     let audit = this.loadAudit();
     if (!audit || !Array.isArray(audit.items) || audit.items.length === 0) {
-      const root = this.baseDir.replace(/[\/\\]\.craftlens$/, '');
+      const root = path.dirname(this.baseDir);
       const ctx = projectContext || ({
         rootPath: root,
         hasTypeScript: true,

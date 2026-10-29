@@ -399,6 +399,28 @@ export class SkillManager {
     return pkg ? this.toSkill(pkg) : undefined;
   }
 
+  public findSkillsForFinding(finding: { ruleId?: string; category?: string; title?: string }): Skill[] {
+    const all = this.getAllSkillsAsSkills().filter(s => s.active);
+    const ruleId = (finding.ruleId || '').toLowerCase();
+    const cat = (finding.category || '').toLowerCase();
+    const title = (finding.title || '').toLowerCase();
+
+    return all.filter(s => {
+      const pkg = this.registry.getSkill(s.id);
+      if (pkg && pkg.rules && pkg.rules.some(r => r.id.toLowerCase() === ruleId)) {
+        return true;
+      }
+      const sName = s.name.toLowerCase();
+      const sDesc = s.description.toLowerCase();
+      const sCat = (s.category || '').toLowerCase();
+      if (sCat && cat && (sCat.includes(cat) || cat.includes(sCat))) return true;
+      if (ruleId && (sName.includes(ruleId) || sDesc.includes(ruleId))) return true;
+      if (cat && (sName.includes(cat) || sDesc.includes(cat))) return true;
+      if (title && (sDesc.includes(title) || sName.includes(title))) return true;
+      return false;
+    });
+  }
+
   public getLockedSkills(): Record<string, string> {
     if (!this.workspaceRoot) return {};
     const configPath = path.join(this.workspaceRoot, '.craftlens', 'config.json');

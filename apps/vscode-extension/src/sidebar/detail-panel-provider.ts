@@ -11,6 +11,8 @@ import {
   Skill,
   SkillManager,
   toSemanticSeverity,
+  FindingStore,
+  resolveFixCapability,
 } from '@craftlens/core';
 
 export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -25,11 +27,36 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
   private showDetails: boolean = false;
   private showAllRelatedSkills: boolean = false;
   private discoveryService = new SkillDiscoveryService();
+  private findingStore?: FindingStore;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private skillManager?: SkillManager
   ) {}
+
+  public setFindingStore(store: FindingStore): void {
+    this.findingStore = store;
+    const unsub = this.findingStore.onDidSelectIssue((issueId) => {
+      if (issueId) {
+        const finding = this.findingStore?.getFindingById(issueId);
+        if (finding) {
+          this.showFinding(finding);
+        }
+      } else {
+        this.clearFinding();
+      }
+    });
+    this.viewDisposables.push({ dispose: unsub });
+  }
+
+  public clearFinding(): void {
+    this.currentFinding = undefined;
+    this.currentRawFinding = undefined;
+    this.currentRecommendations = undefined;
+    if (this._view) {
+      this.updateHtml();
+    }
+  }
 
   public dispose(): void {
     this.disposeView();
@@ -127,8 +154,11 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
 
         case 'applyFix':
           if (this.currentFinding) {
+            const raw = this.currentRawFinding;
             const loc = this.getCurrentLocation();
-            if (loc?.filePath) {
+            if (raw && raw.suggestions && raw.suggestions.length > 0 && raw.suggestions[0].safe) {
+              await vscode.commands.executeCommand('craftlens.applySuggestion', raw.id || this.currentFinding.id, 0);
+            } else if (loc?.filePath) {
               await vscode.commands.executeCommand(
                 'craftlens.applyQuickFix',
                 vscode.Uri.file(loc.filePath),
@@ -281,16 +311,16 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       const loc = normalizeFindingLocation(raw);
       this.currentFinding = {
         id: raw.fingerprint || raw.ruleId,
-        category: raw.ruleId.startsWith('SEC-') ? 'security' : raw.ruleId.startsWith('UI-') || raw.ruleId.startsWith('CP-') || raw.ruleId.startsWith('VH-') ? 'ui' : 'backend',
+        category: raw.ruleId.startsWith('SEC-') || raw.category === 'security' ? 'security' : raw.ruleId.startsWith('UI-') || raw.ruleId.startsWith('CP-') || raw.ruleId.startsWith('VH-') || raw.category === 'ui-ux' ? 'ui' : 'backend',
         title: raw.problemTitle || raw.title || raw.message,
         summary: raw.whatIsWrong || raw.message,
         severity: raw.severity === 'blocker' ? 'critical' : raw.severity === 'error' ? 'high' : raw.severity === 'warning' ? 'medium' : 'low',
         instances: raw.instances?.length || 1,
         location: loc,
         locations: raw.instances?.map(inst => normalizeFindingLocation(inst) || loc).filter(Boolean) as any || (loc ? [loc] : []),
-        why: raw.whyItMatters || raw.description || '',
+        why: raw.whyItMatters || raw.why || raw.description || raw.whatIsWrong || '',
         evidence: raw.evidence?.map(e => e.explanation || e.snippet || '').filter(Boolean) || [],
-        recommendation: raw.howToFix || raw.recommendation || '',
+        recommendation: raw.howToFix || raw.recommendation || raw.suggestions?.[0]?.explanation || '',
         suggestedApproach: undefined,
         verification: raw.verification,
         signals: raw.signals?.map(s => `${s.type}: ${typeof s.value === 'string' ? s.value : JSON.stringify(s.value)}`),
@@ -380,6 +410,44 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
 
     const relatedSkillsBlock = this.renderRelatedSkillsBlock(relatedSkills);
 
+    const raw = this.currentRawFinding;
+    const recommendationText = f.recommendation || raw?.howToFix || raw?.suggestions?.[0]?.explanation || f.suggestedApproach || (f.fix ? f.fix.description : '');
+    const whyItMattersText = f.why || raw?.whyItMatters || raw?.whatIsWrong || f.summary || '';
+
+    let skillName = 'General Quality';
+    if (f.category === 'security' || f.ruleId?.startsWith('SEC-') || raw?.category === 'security') {
+      skillName = 'Security Best Practices';
+    } else if (f.category === 'ui' || f.ruleId?.startsWith('UI-') || f.ruleId?.startsWith('CP-') || f.ruleId?.startsWith('VH-') || raw?.category === 'ui-ux') {
+      skillName = 'UI / UX Quality';
+    } else if (f.category === 'accessibility' || f.ruleId?.startsWith('A11Y-')) {
+      skillName = 'Accessibility Best Practices';
+    } else if (f.category === 'performance' || f.ruleId?.startsWith('PERF-')) {
+      skillName = 'Performance Optimization';
+    } else if (f.category === 'backend' || f.ruleId?.startsWith('TECH-')) {
+      skillName = 'Backend / Tech Quality';
+    } else if (relatedSkills && relatedSkills.length > 0 && (relatedSkills[0] as any)?.name) {
+      skillName = (relatedSkills[0] as any).name;
+    }
+
+    const fixCap = this.findingStore
+      ? this.findingStore.getFixCapability(raw || f, undefined, this.skillManager)
+      : resolveFixCapability(raw || f, this.skillManager);
+    const automaticFixAvailable = fixCap.canApply;
+
+    const evidenceItems: string[] = [];
+    if (f.evidence && Array.isArray(f.evidence)) {
+      for (const ev of f.evidence) {
+        if (ev && typeof ev === 'string') evidenceItems.push(ev);
+      }
+    }
+    if (evidenceItems.length === 0 && raw?.evidence && Array.isArray(raw.evidence)) {
+      for (const ev of raw.evidence) {
+        if (typeof ev === 'string') evidenceItems.push(ev);
+        else if (ev?.explanation) evidenceItems.push(ev.explanation);
+        else if (ev?.snippet) evidenceItems.push(ev.snippet);
+      }
+    }
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -389,21 +457,21 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
   <title>Issue Details</title>
   <style>
     :root {
-      --bg: var(--vscode-editor-background, #18181b);
-      --fg: var(--vscode-foreground, #cccccc);
-      --card-bg: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #1e1e1e));
-      --border: var(--vscode-panel-border, var(--vscode-widget-border, #27272a));
-      --border-subtle: var(--vscode-panel-border, #27272a);
-      --link: var(--vscode-textLink-foreground, #3794ff);
-      --muted: var(--vscode-descriptionForeground, #858585);
-      --btn-primary-bg: var(--vscode-button-background, #0e639c);
-      --btn-primary-fg: var(--vscode-button-foreground, #ffffff);
-      --btn-primary-hover: var(--vscode-button-hoverBackground, #1177bb);
-      --btn-sec-bg: var(--vscode-button-secondaryBackground, #313131);
-      --btn-sec-fg: var(--vscode-button-secondaryForeground, #cccccc);
-      --btn-sec-hover: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
+      --bg: var(--vscode-editor-background);
+      --fg: var(--vscode-foreground);
+      --card-bg: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+      --border: var(--vscode-panel-border, var(--vscode-widget-border));
+      --border-subtle: var(--vscode-panel-border);
+      --link: var(--vscode-textLink-foreground);
+      --muted: var(--vscode-descriptionForeground);
+      --btn-primary-bg: var(--vscode-button-background);
+      --btn-primary-fg: var(--vscode-button-foreground);
+      --btn-primary-hover: var(--vscode-button-hoverBackground);
+      --btn-sec-bg: var(--vscode-button-secondaryBackground);
+      --btn-sec-fg: var(--vscode-button-secondaryForeground);
+      --btn-sec-hover: var(--vscode-button-secondaryHoverBackground);
       --tag-bg: var(--vscode-badge-background, rgba(255, 255, 255, 0.05));
-      --accent-pill: var(--vscode-textLink-foreground, #3794ff);
+      --accent-pill: var(--vscode-textLink-foreground);
       --radius-sm: 2px;
       --radius-md: 2px;
     }
@@ -449,10 +517,11 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       justify-content: center;
       line-height: 1.2;
     }
-    .sev-badge.error { background: rgba(239, 68, 68, 0.18); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
-    .sev-badge.warning { background: rgba(234, 179, 8, 0.18); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4); }
-    .sev-badge.moderate { background: rgba(249, 115, 22, 0.18); color: #f97316; border: 1px solid rgba(249, 115, 22, 0.4); }
-    .sev-badge.info { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+    .sev-badge.error { background: rgba(239, 68, 68, 0.18); color: var(--vscode-errorForeground, var(--vscode-editorError-foreground)); border: 1px solid rgba(239, 68, 68, 0.4); }
+    .sev-badge.warning { background: rgba(234, 179, 8, 0.18); color: var(--vscode-editorWarning-foreground, var(--vscode-charts-orange)); border: 1px solid rgba(234, 179, 8, 0.4); }
+    .sev-badge.moderate { background: rgba(249, 115, 22, 0.18); color: var(--vscode-charts-orange, var(--vscode-editorWarning-foreground)); border: 1px solid rgba(249, 115, 22, 0.4); }
+    .sev-badge.info { background: rgba(148, 163, 184, 0.15); color: var(--muted); border: 1px solid rgba(148, 163, 184, 0.3); }
+    .sev-badge.info { background: rgba(59, 130, 246, 0.15); color: var(--vscode-editorInfo-foreground, currentColor); border: 1px solid rgba(59, 130, 246, 0.4); }
 
     .category-badge {
       font-size: 9.5px;
@@ -465,7 +534,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
     .issue-title {
       font-size: 13.5px;
       font-weight: 600;
-      color: var(--vscode-foreground, #ffffff);
+      color: var(--fg);
       margin-bottom: 4px;
       line-height: 1.35;
     }
@@ -592,7 +661,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       user-select: none;
     }
     .btn:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder, #3b82f6);
+      outline: 1px solid var(--vscode-focusBorder);
       outline-offset: 1px;
     }
 
@@ -642,8 +711,8 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
     }
 
     .fix-badge {
-      background: #10b981;
-      color: #022c22;
+      background: var(--vscode-testing-iconPassed, var(--vscode-button-background));
+      color: var(--vscode-button-foreground);
       font-size: 10px;
       font-weight: 700;
       padding: 2px 6px;
@@ -654,12 +723,12 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
 
     .fix-title {
       font-weight: 600;
-      color: var(--vscode-foreground, #ffffff);
+      color: var(--fg);
       font-size: 12px;
     }
 
     .diff-block {
-      background: var(--vscode-editor-background, #09090b);
+      background: var(--vscode-editor-background);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       padding: 6px 10px;
@@ -682,12 +751,14 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
 
     .diff-del {
       background: rgba(239, 68, 68, 0.16);
-      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.08);
+      color: var(--vscode-errorForeground, var(--vscode-editorError-foreground));
     }
 
     .diff-add {
       background: rgba(16, 185, 129, 0.16);
-      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.08);
+      color: var(--vscode-testing-iconPassed);
     }
 
     .diff-sign {
@@ -740,7 +811,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
     .better-design-container {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-left: 2px solid var(--vscode-focusBorder, #007acc);
+      border-left: 2px solid var(--vscode-focusBorder, currentColor);
       border-radius: var(--radius-sm);
       padding: 8px 10px;
       margin-bottom: 12px;
@@ -751,7 +822,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #60a5fa;
+      color: var(--link);
       margin-bottom: 6px;
     }
 
@@ -786,13 +857,13 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
     .rec-title {
       font-size: 13px;
       font-weight: 700;
-      color: var(--vscode-foreground, #ffffff);
+      color: var(--fg);
       letter-spacing: 0.02em;
     }
 
     .rec-confidence {
       font-size: 11px;
-      color: #34d399;
+      color: var(--vscode-testing-iconPassed);
       font-weight: 600;
       white-space: nowrap;
     }
@@ -825,7 +896,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
 
     .rec-meta-body.mono {
       font-family: monospace;
-      color: #93c5fd;
+      color: var(--link);
       font-size: 11px;
     }
 
@@ -864,7 +935,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       font-weight: 700;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: #93c5fd;
+      color: var(--link);
     }
     .related-skills-sub {
       font-size: 9.5px;
@@ -967,7 +1038,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
     }
     .btn-skill-action.state-active {
       background: rgba(16, 185, 129, 0.12);
-      color: #10b981;
+      color: var(--vscode-testing-iconPassed);
       border-color: rgba(16, 185, 129, 0.25);
     }
     .related-more-btn {
@@ -1083,7 +1154,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
               ` : `
                 <button class="btn btn-secondary" onclick="applyRecommendation(${idx})">How to Improve</button>
               `}
-              <button class="btn btn-quiet" onclick="rejectRecommendation(${idx})">Dismiss</button>
+              <button class="btn btn-quiet" onclick="rejectRecommendation(${idx})">Reject</button>
             </div>
           </div>
         `).join('<div class="rec-divider"></div>')}
@@ -1093,26 +1164,34 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       : ''
   }
 
-  <!-- 1. WHAT'S WRONG -->
+  <!-- SUGGESTED FIX -->
   <div class="section-block">
-    <div class="section-title">What's Wrong</div>
-    <div class="section-body">${this.escapeHtml(f.summary)}</div>
+    <div class="section-title">Suggested Fix</div>
+    <div class="section-body">${this.escapeHtml(recommendationText || 'No specific fix recommendation available for this finding.')}</div>
   </div>
 
-  <!-- 2. WHY IT MATTERS -->
+  <!-- WHY IT MATTERS -->
+  ${whyItMattersText ? `
   <div class="section-block">
     <div class="section-title">Why It Matters</div>
-    <div class="section-body">${this.escapeHtml(f.why)}</div>
+    <div class="section-body">${this.escapeHtml(whyItMattersText)}</div>
+  </div>
+  ` : ''}
+
+  <!-- SKILL -->
+  <div class="section-block">
+    <div class="section-title">Skill</div>
+    <div class="section-body">${this.escapeHtml(skillName)}</div>
   </div>
 
-  <!-- 3. EVIDENCE -->
+  <!-- EVIDENCE -->
   ${
-    f.evidence && f.evidence.length > 0
+    evidenceItems.length > 0
       ? `
     <div class="section-block">
       <div class="section-title">Evidence</div>
       <ul class="evidence-list">
-        ${f.evidence
+        ${evidenceItems
           .map(
             ev => `
           <li class="evidence-item">
@@ -1128,18 +1207,28 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       : ''
   }
 
-  <!-- 4. HOW TO IMPROVE IT -->
+  <!-- AUTOMATIC FIX -->
   <div class="section-block">
-    <div class="section-title">How To Improve It</div>
-    <div class="section-body">${this.escapeHtml(f.recommendation)}</div>
+    <div class="section-title">Automatic Fix</div>
+    <div class="section-body">
+      <div style="font-weight: 600; color: ${automaticFixAvailable ? 'var(--vscode-testing-iconPassed)' : 'var(--muted)'};">
+        ${automaticFixAvailable ? 'Available' : 'Not available'}
+      </div>
+      ${automaticFixAvailable ? `
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button class="btn btn-secondary" onclick="previewFix()">Preview Change</button>
+          <button class="btn btn-primary" onclick="applyFix()">Apply Fix</button>
+        </div>
+      ` : ''}
+    </div>
   </div>
 
   ${
     this.currentRawFinding?.detectedToken
       ? `
-    <div class="section-block" style="border-left: 2px solid #3b82f6; padding-left: 8px;">
-      <div class="section-title" style="color: #60a5fa;">Existing Design Token Detected</div>
-      <div style="font-family: monospace; font-size: 11px; color: #93c5fd; margin-top: 2px;">
+    <div class="section-block" style="border-left: 2px solid var(--vscode-textLink-foreground); padding-left: 8px;">
+      <div class="section-title" style="color: var(--vscode-textLink-foreground);">Existing Design Token Detected</div>
+      <div style="font-family: monospace; font-size: 11px; color: var(--vscode-textLink-foreground); margin-top: 2px;">
         ${this.escapeHtml(
           this.currentRawFinding.detectedToken.name.startsWith('--')
             ? this.currentRawFinding.detectedToken.name
@@ -1158,7 +1247,7 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
       <div class="section-title">Contextual Fix Suggestions</div>
       <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
         ${this.currentRawFinding.suggestions.slice(0, 3).map((sug, idx) => `
-          <div style="background: var(--vscode-sideBar-background, rgba(255,255,255,0.03)); border: 1px solid var(--vscode-editorWidget-border, #333); border-radius: 4px; padding: 8px;">
+          <div style="background: var(--vscode-sideBar-background, rgba(255,255,255,0.03)); border: 1px solid var(--vscode-editorWidget-border, var(--border)); border-radius: 4px; padding: 8px;">
             <div style="font-weight: 600; font-size: 11px; margin-bottom: 2px;">${this.escapeHtml(sug.title)}</div>
             <div style="font-size: 10px; color: var(--muted); margin-bottom: 6px;">${this.escapeHtml(sug.explanation)}</div>
             ${sug.previewDiff ? `
@@ -1360,9 +1449,9 @@ export class CraftLensDetailViewProvider implements vscode.WebviewViewProvider, 
   <title>CraftLens</title>
   <style>
     :root {
-      --bg: var(--vscode-editor-background, #1e1e1e);
-      --fg: var(--vscode-foreground, #cccccc);
-      --muted: var(--vscode-descriptionForeground, #888888);
+      --bg: var(--vscode-editor-background);
+      --fg: var(--vscode-foreground);
+      --muted: var(--vscode-descriptionForeground);
     }
     body {
       background-color: var(--bg);

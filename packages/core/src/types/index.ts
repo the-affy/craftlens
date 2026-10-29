@@ -16,3 +16,4 @@ export * from './signal.js';
 export * from './skill.js';
 export * from './snapshot.js';
 export * from './rules-engine.js';
+export * from './issue.js';

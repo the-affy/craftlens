@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { detectProjectContext, ProjectContext, AuditStorageManager } from '@craftlens/core';
+import {
+  detectProjectContext,
+  ProjectContext,
+  AuditStorageManager,
+  ProjectContextService,
+  ChangeManager,
+  VerificationEngine,
+} from '@craftlens/core';
 import { RuleRegistry, RuleEngine, registerDefaultRules, CustomRuleLoader } from '@craftlens/rule-engine';
 import { AstCache } from '@craftlens/parser';
 import { DiagnosticsCollectionAdapter } from './diagnostics/collection-adapter.js';
@@ -48,15 +55,40 @@ export function activate(context: vscode.ExtensionContext): void {
   configManager = new ConfigurationManager();
 
   // 4. Detect Project Context & Initialize Persistent Storage
-  const projectContext: ProjectContext = detectProjectContext({ rootPath });
+  const projectContextService = new ProjectContextService(rootPath);
+  const projectContext: ProjectContext = projectContextService.getContext();
   const storageManager = new AuditStorageManager(rootPath);
   if (workspaceFolders && workspaceFolders.length > 0) {
     storageManager.ensureDefaultProjectConfig();
+    storageManager.ensureDefaultFiles(projectContext);
   }
   configManager.setStorageManager(storageManager);
 
-  // 5. Initialize FindingStore & Sidebar Tree Provider
+  // 5. Initialize FindingStore & Canonical Issue Registry
   const findingStore = diagnosticsAdapter.getFindingStore();
+  const issueRegistry = findingStore.getIssueRegistry();
+  issueRegistry.setWorkspaceRoot(rootPath);
+
+  const changeManager = new ChangeManager(rootPath, issueRegistry);
+  const verificationEngine = new VerificationEngine(
+    issueRegistry,
+    changeManager,
+    async (filePath, content) => {
+      try {
+        const res = engine.analyze({
+          filePath,
+          sourceText: content,
+          config: configManager?.getConfig(),
+          projectContext,
+        });
+        return res.findings || [];
+      } catch {
+        return [];
+      }
+    },
+    rootPath
+  );
+
   engine.getSkillManager().loadProjectSkills();
   sidebarProvider = new CraftLensSidebarProvider(
     findingStore,
@@ -79,6 +111,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 5b. Initialize Detail Panel Provider (Bottom Panel Webview)
   detailPanelProvider = new CraftLensDetailViewProvider(context.extensionUri, engine.getSkillManager());
+  detailPanelProvider.setFindingStore(findingStore);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       CraftLensDetailViewProvider.viewType,
@@ -155,7 +188,10 @@ export function activate(context: vscode.ExtensionContext): void {
     sidebarProvider,
     detailPanelProvider,
     inlineDecorationManager,
-    context.extensionUri
+    context.extensionUri,
+    projectContextService,
+    changeManager,
+    verificationEngine
   );
 
   // 11. Subscribe to configuration updates

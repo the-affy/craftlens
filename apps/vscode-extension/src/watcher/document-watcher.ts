@@ -118,7 +118,7 @@ export class DocumentWatcher {
           if (!config.enabled) return;
           if (!this.isSupportedDocument(doc)) return;
 
-          this.scanDocument(doc);
+          this.scanDocument(doc, false);
         } catch (err: any) {
           console.error('[CraftLens] DocumentWatcher onDidOpenTextDocument failure:', {
             eventName: 'onDidOpenTextDocument',
@@ -130,7 +130,7 @@ export class DocumentWatcher {
       })
     );
 
-    // 3. Document saved (scan on save)
+    // 3. Document saved (scan on save & persist, debounced/coalesced)
     this.disposables.push(
       vscode.workspace.onDidSaveTextDocument(doc => {
         try {
@@ -138,7 +138,7 @@ export class DocumentWatcher {
           if (!config.enabled || !config.scanOnSave) return;
           if (!this.isSupportedDocument(doc)) return;
 
-          this.scanDocument(doc);
+          this.scheduleSaveScan(doc);
         } catch (err: any) {
           console.error('[CraftLens] DocumentWatcher onDidSaveTextDocument failure:', {
             eventName: 'onDidSaveTextDocument',
@@ -186,7 +186,7 @@ export class DocumentWatcher {
         if (doc.isClosed || doc.version !== this.scheduledVersions.get(key)) {
           return;
         }
-        this.scanDocument(doc);
+        this.scanDocument(doc, false);
       }, this.debounceMs);
 
       this.debounceTimers.set(key, timer);
@@ -195,7 +195,33 @@ export class DocumentWatcher {
     }
   }
 
-  public scanDocument(doc: vscode.TextDocument): void {
+  public scheduleSaveScan(doc: vscode.TextDocument): void {
+    try {
+      const key = `save_${doc.uri.fsPath}`;
+      const version = doc.version;
+      this.scheduledVersions.set(key, version);
+
+      const existing = this.debounceTimers.get(key);
+      if (existing) {
+        clearTimeout(existing);
+      }
+
+      const timer = setTimeout(() => {
+        this.debounceTimers.delete(key);
+        // Cancel stale analysis if doc closed or new version saved
+        if (doc.isClosed || doc.version !== this.scheduledVersions.get(key)) {
+          return;
+        }
+        this.scanDocument(doc, true);
+      }, this.debounceMs);
+
+      this.debounceTimers.set(key, timer);
+    } catch (err: any) {
+      console.error('[CraftLens] scheduleSaveScan failure:', err);
+    }
+  }
+
+  public scanDocument(doc: vscode.TextDocument, persistOnDisk = false): void {
     try {
       if (!this.isSupportedDocument(doc)) return;
 
@@ -219,10 +245,11 @@ export class DocumentWatcher {
       this.inlayHintsProvider?.refresh();
       this.inlineDecorationManager?.updateAllVisibleEditors();
 
-      // Check for newly introduced findings vs resolved findings
-      if (prevFindings.length > 0 || result.findings.length > 0) {
+      // Check for newly introduced findings vs resolved findings (only persist on save or explicit scan)
+      if (persistOnDisk && (prevFindings.length > 0 || result.findings.length > 0)) {
+        const relPath = vscode.workspace.asRelativePath(doc.uri);
         const changeReview = generateChangeReview(
-          [vscode.workspace.asRelativePath(doc.uri)],
+          [relPath],
           prevFindings,
           result.findings
         );
@@ -232,10 +259,36 @@ export class DocumentWatcher {
           const reviewMd = formatChangeReviewMarkdown(changeReview);
           this.storageManager.saveChangeReview(reviewMd);
         }
+
+        // Maintain persistent change log of all changes made by user
+        if (changeReview.newFindings.length > 0 || changeReview.resolvedFindings.length > 0) {
+          this.storageManager.appendUserChange(
+            {
+              id: `chg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              timestamp: Date.now(),
+              filesChanged: [relPath],
+              linesAdded: changeReview.linesAdded,
+              linesRemoved: changeReview.linesRemoved,
+              resolvedFindings: changeReview.resolvedFindings.map(f => ({
+                ruleId: f.ruleId,
+                message: f.message || f.whatIsWrong || '',
+                filePath: relPath,
+              })),
+              newFindings: changeReview.newFindings.map(f => ({
+                ruleId: f.ruleId,
+                message: f.message || f.whatIsWrong || '',
+                filePath: relPath,
+              })),
+              qualityScores: changeReview.qualityScores,
+              source: 'editor-save',
+            },
+            this.projectContext?.projectName
+          );
+        }
       }
 
-      // Continuous Master Audit Checklist Synchronization
-      if (config.persistAudit && this.projectContext) {
+      // Continuous Master Audit Checklist Synchronization (only persist on disk on save or if required)
+      if (persistOnDisk && config.persistAudit && this.projectContext) {
         const allFindings: Finding[] = [];
         for (const list of this.diagnosticsAdapter.getAllFindings().values()) {
           allFindings.push(...list);
@@ -249,7 +302,12 @@ export class DocumentWatcher {
 
         this.statusBar.updateFromChecklist(checklist);
       } else {
-        this.statusBar.updateIdle();
+        const existingAudit = this.storageManager.loadAudit();
+        if (existingAudit) {
+          this.statusBar.updateFromChecklist(existingAudit);
+        } else {
+          this.statusBar.updateIdle();
+        }
       }
     } catch (err: any) {
       console.error('[CraftLens] scanDocument failure:', {

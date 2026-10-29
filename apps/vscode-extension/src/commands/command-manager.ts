@@ -17,6 +17,11 @@ import {
   AuditSnapshotManager,
   RuleExecutionMode,
   formatChecklistMarkdown,
+  formatIssuesMarkdown,
+  formatSuggestionsMarkdown,
+  formatUserChangesMarkdown,
+  formatProblemsMarkdown,
+  formatSuggestionMarkdown,
   UserRuleManager,
   Suggestion,
   toSemanticSeverity,
@@ -26,6 +31,13 @@ import {
   Skill,
   normalizeRecommendation,
   CanonicalRecommendation,
+  ProjectContextService,
+  ChangeManager,
+  VerificationEngine,
+  Issue,
+  CraftLensQAEngine,
+  QAMode,
+  QAReport,
 } from '@craftlens/core';
 
 import {
@@ -89,7 +101,10 @@ export class CommandManager {
     private sidebarProvider?: CraftLensSidebarProvider,
     private detailPanelProvider?: CraftLensDetailViewProvider,
     private inlineDecorationManager?: CraftLensInlineDecorationManager,
-    private extensionUri?: vscode.Uri
+    private extensionUri?: vscode.Uri,
+    private projectContextService?: ProjectContextService,
+    private changeManager?: ChangeManager,
+    private verificationEngine?: VerificationEngine
   ) {
     this.disposables.push(
       vscode.workspace.registerTextDocumentContentProvider('craftlens-preview', this.previewProvider)
@@ -119,6 +134,40 @@ export class CommandManager {
   public setInlineDecorationManager(manager: CraftLensInlineDecorationManager): void {
     this.inlineDecorationManager = manager;
     this.updateRecommendationApplier();
+  }
+
+  public getChangeManager(): ChangeManager {
+    if (!this.changeManager) {
+      const root = this.storageManager.getWorkspaceRoot();
+      const issueRegistry = this.diagnosticsAdapter.getFindingStore().getIssueRegistry();
+      this.changeManager = new ChangeManager(root, issueRegistry);
+    }
+    return this.changeManager;
+  }
+
+  public getVerificationEngine(): VerificationEngine {
+    if (!this.verificationEngine) {
+      const issueRegistry = this.diagnosticsAdapter.getFindingStore().getIssueRegistry();
+      const cm = this.getChangeManager();
+      this.verificationEngine = new VerificationEngine(
+        issueRegistry,
+        cm,
+        async (filePath, content) => {
+          try {
+            const res = this.engine.analyze({
+              filePath,
+              sourceText: content,
+              config: this.configManager?.getConfig(),
+              projectContext: this.projectContext,
+            });
+            return res.findings || [];
+          } catch {
+            return [];
+          }
+        }
+      );
+    }
+    return this.verificationEngine;
   }
 
   private updateRecommendationApplier(): void {
@@ -528,6 +577,98 @@ export class CommandManager {
     });
   }
 
+  public async executeQAMode(mode: QAMode): Promise<QAReport> {
+    const root = this.storageManager.getWorkspaceRoot();
+    const issueRegistry = this.diagnosticsAdapter.getFindingStore().getIssueRegistry();
+    const qaEngine = new CraftLensQAEngine(issueRegistry);
+
+    let report!: QAReport;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `CraftLens QA: Running ${mode.toUpperCase()} Assurance`,
+        cancellable: false,
+      },
+      async (progress) => {
+        progress.report({ message: 'Running built-in and external analyzers...' });
+
+        report = await qaEngine.runQA({
+          workspaceRoot: root,
+          projectContext: this.projectContext,
+          mode,
+          isSelfQA: mode === 'self',
+          findingStore: this.diagnosticsAdapter.getFindingStore(),
+          issueRegistry,
+          changeManager: this.getChangeManager(),
+          verificationEngine: this.getVerificationEngine(),
+        });
+      }
+    );
+
+    // Output formatted report to output channel
+    this.outputChannel.show(true);
+    this.outputChannel.appendLine(`\n======================================================`);
+    this.outputChannel.appendLine(`🔍 CraftLens QA & Release Assurance Report (${report.mode.toUpperCase()})`);
+    this.outputChannel.appendLine(`======================================================`);
+    this.outputChannel.appendLine(`Release Gate Result: ${report.gateResult}`);
+    this.outputChannel.appendLine(`Duration: ${report.durationMs}ms`);
+    this.outputChannel.appendLine(`Summary:`);
+    this.outputChannel.appendLine(`  Critical:    ${report.summary.critical}`);
+    this.outputChannel.appendLine(`  High:        ${report.summary.high}`);
+    this.outputChannel.appendLine(`  Medium:      ${report.summary.medium}`);
+    this.outputChannel.appendLine(`  Low:         ${report.summary.low}`);
+    this.outputChannel.appendLine(`  Suggestions: ${report.summary.suggestions}`);
+    this.outputChannel.appendLine(`  Total:       ${report.summary.total}`);
+    if (report.summary.unconfirmedDiscarded > 0) {
+      this.outputChannel.appendLine(`  Unconfirmed / Discarded: ${report.summary.unconfirmedDiscarded}`);
+    }
+    this.outputChannel.appendLine(`\nChecks:`);
+    for (const chk of report.checks) {
+      const icon = chk.status === 'pass' ? '✓' : chk.status === 'fail' ? '✗' : chk.status === 'warn' ? '⚠' : '-';
+      this.outputChannel.appendLine(`  [${icon}] ${chk.name}: ${chk.status.toUpperCase()} (${chk.durationMs}ms) - ${chk.notes || ''}`);
+    }
+    if (report.gateReasons.length > 0) {
+      this.outputChannel.appendLine(`\nGate Details:`);
+      for (const r of report.gateReasons) {
+        this.outputChannel.appendLine(`  • ${r}`);
+      }
+    }
+    this.outputChannel.appendLine(`======================================================\n`);
+
+    // Notify user with gate result
+    const msgPromise =
+      report.gateResult === 'RELEASE BLOCKED'
+        ? vscode.window.showErrorMessage(
+            `CraftLens QA: RELEASE BLOCKED (${report.gateReasons.length} blocker(s) found). View Output for details.`,
+            'Open Project Overview'
+          )
+        : report.gateResult === 'RELEASE PASS WITH WARNINGS'
+        ? vscode.window.showWarningMessage(
+            `CraftLens QA: RELEASE PASS WITH WARNINGS (${report.summary.total} finding(s)). View Output for details.`,
+            'Open Project Overview'
+          )
+        : vscode.window.showInformationMessage(
+            `CraftLens QA: RELEASE PASS. All quality and security checks passed!`,
+            'Open Project Overview'
+          );
+
+    if (msgPromise && typeof (msgPromise as any).then === 'function') {
+      (msgPromise as any).then((choice: any) => {
+        if (choice === 'Open Project Overview') {
+          vscode.commands.executeCommand('craftlens.openProjectOverview');
+        }
+      });
+    }
+
+    // Refresh Sidebar and Project Overview if active
+    this.sidebarProvider?.refresh();
+    vscode.commands.executeCommand('craftlens.refreshSidebar');
+    ProjectOverviewPanel.currentPanel?.refresh();
+
+    return report;
+  }
+
   private registerCmd(commandId: string, callback: (...args: any[]) => any): vscode.Disposable {
     return vscode.commands.registerCommand(commandId, callback);
   }
@@ -586,6 +727,79 @@ export class CommandManager {
       })
     );
 
+    // 1a. QA, Code Review & Release Assurance
+    this.disposables.push(
+      this.registerCmd('craftlens.runQA', async (preselectedMode?: QAMode) => {
+        let mode: QAMode | undefined = preselectedMode;
+        if (!mode) {
+          const pick = await vscode.window.showQuickPick(
+            [
+              {
+                label: '$(checklist) Full QA',
+                description: 'Complete project analysis across all built-in analyzers (Default)',
+                detail: 'TypeScript, Manifest, Commands, Runtime, Webviews, State, Fix Engine, Dependencies, Security, Code Quality, Tests.',
+                mode: 'full' as QAMode,
+                picked: true,
+              },
+              {
+                label: '$(zap) Quick Review',
+                description: 'Fast static & boundary analysis for small changes',
+                detail: 'TypeScript boundary checks, Manifest, Command registry, and critical Code Quality.',
+                mode: 'quick' as QAMode,
+              },
+              {
+                label: '$(diff) Change Review',
+                description: 'Focused analysis on recently changed files',
+                detail: 'Inspects changed files and affected dependencies for regressions.',
+                mode: 'change' as QAMode,
+              },
+              {
+                label: '$(shield) Security QA',
+                description: 'Deep security and supply-chain analysis',
+                detail: 'Secret scanning, shell command injection, HTML injection, webview CSP, and vulnerable packages.',
+                mode: 'security' as QAMode,
+              },
+              {
+                label: '$(rocket) Pre-Release QA',
+                description: 'Full release readiness and packaging verification',
+                detail: 'Verifies build, tests, packaging, VSIX artifact, and evaluates Release Gate.',
+                mode: 'release' as QAMode,
+              },
+              {
+                label: '$(server-process) Deep Technical Audit',
+                description: 'Repository-wide engineering audit',
+                detail: 'Architectural layer boundaries, state consistency, fix engine lifecycle, and supply chain.',
+                mode: 'deep' as QAMode,
+              },
+              {
+                label: '$(beaker) Self-QA',
+                description: 'Deep dogfooding analysis of CraftLens itself',
+                detail: 'Analyzes extension host, webviews, fix engine, commands, and VSIX packaging.',
+                mode: 'self' as QAMode,
+              },
+            ],
+            { placeHolder: 'Select QA & Release Assurance Mode' }
+          );
+          if (!pick) return;
+          mode = pick.mode;
+        }
+
+        await this.executeQAMode(mode);
+      })
+    );
+
+    this.disposables.push(
+      this.registerCmd('craftlens.runSelfQA', async () => {
+        await this.executeQAMode('self');
+      })
+    );
+
+    this.disposables.push(
+      this.registerCmd('craftlens.verifyRelease', async () => {
+        await this.executeQAMode('release');
+      })
+    );
+
     // 1b. Project Overview in Editor Tab
     this.disposables.push(
       this.registerCmd('craftlens.openProjectOverview', async () => {
@@ -600,10 +814,49 @@ export class CommandManager {
           () => {
             vscode.commands.executeCommand('craftlens.scanWorkspace');
           },
-          async (findingId: string) => {
-            await vscode.commands.executeCommand('craftlens.applyQuickFix', { id: findingId });
+          async (findingOrChangeId: string) => {
+            const cm = this.getChangeManager();
+            const ve = this.getVerificationEngine();
+            let change = cm.getChange(findingOrChangeId);
+            if (!change) {
+              const finding = this.diagnosticsAdapter.getFindingStore().getCanonicalFindings().find(f => (f.id || f.ruleId) === findingOrChangeId);
+              if (finding) {
+                change = cm.createOrGetProposedChangeForIssue(finding);
+              }
+            }
+            if (change) {
+              const res = await cm.applyChange(change.id);
+              if (res.success) {
+                await ve.verifyChange(change.id);
+                const relFiles = (change.files || []).map(f => path.basename(f.filePath));
+                this.storageManager.appendUserChange(
+                  {
+                    id: change.id,
+                    timestamp: Date.now(),
+                    filesChanged: relFiles,
+                    resolvedFindings: (change.issueIds || []).map(id => ({
+                      ruleId: id,
+                      message: change?.title || '',
+                      filePath: relFiles[0] || '',
+                    })),
+                    newFindings: [],
+                    source: 'change-plan',
+                    summary: change.title || `Applied change ${change.id}`,
+                  },
+                  this.projectContext?.projectName,
+                  cm
+                );
+                return true;
+              }
+              vscode.window.showErrorMessage(`CraftLens: Fix failed validation - ${res.error}`);
+              return false;
+            }
+            await vscode.commands.executeCommand('craftlens.applyQuickFix', { id: findingOrChangeId });
             return true;
-          }
+          },
+          undefined,
+          this.getChangeManager(),
+          this.getVerificationEngine()
         );
       })
     );
@@ -1046,7 +1299,34 @@ export class CommandManager {
         const fix = finding?.designFix || finding?.fix;
         const changes = Array.isArray(fix?.changes) ? fix.changes : [];
         if (!finding || !fix || changes.length === 0) {
-          vscode.window.showInformationMessage('CraftLens: No deterministic fix available for this finding.');
+          // Check for matching skill first (Section 18 & 19)
+          const matchedSkills = finding ? this.engine?.getSkillManager()?.findSkillsForFinding(finding) || [] : [];
+          if (matchedSkills.length > 0) {
+            const skill = matchedSkills[0];
+            const action = await vscode.window.showInformationMessage(
+              `CraftLens: No automatic fix is available yet for "${finding?.title || finding?.ruleId}". Recommended approach: Use the "${skill.name}" skill.`,
+              'Use Skill',
+              'View Suggested Approach'
+            );
+            if (action === 'Use Skill') {
+              await vscode.commands.executeCommand('craftlens.useSkill', skill.id);
+            } else if (action === 'View Suggested Approach') {
+              await vscode.commands.executeCommand('craftlens.openSuggestionsFile');
+            }
+            return;
+          }
+
+          // If no skill, check for suggestions (Section 20 & 48)
+          const action = await vscode.window.showInformationMessage(
+            `CraftLens: No deterministic fix available for "${finding?.title || finding?.ruleId || 'this finding'}". Architectural review recommended in suggestions.md.`,
+            'Open suggestions.md',
+            'Open Project Overview'
+          );
+          if (action === 'Open suggestions.md') {
+            await vscode.commands.executeCommand('craftlens.openSuggestionsFile');
+          } else if (action === 'Open Project Overview') {
+            await vscode.commands.executeCommand('craftlens.openProjectOverview');
+          }
           return;
         }
 
@@ -1073,7 +1353,27 @@ export class CommandManager {
           const remaining = store.getFindingsForFile(uri.fsPath).filter(f => (f.fingerprint || f.ruleId) !== (finding.fingerprint || finding.ruleId));
           this.diagnosticsAdapter.update(uri, remaining);
           this.storageManager.markCriteriaCheckedForFinding(finding);
+          this.storageManager.appendUserChange(
+            {
+              id: `change_${Date.now()}`,
+              timestamp: Date.now(),
+              filesChanged: [path.basename(uri.fsPath)],
+              resolvedFindings: [
+                {
+                  ruleId: finding.ruleId,
+                  message: fix.title || finding.title || '',
+                  filePath: uri.fsPath,
+                },
+              ],
+              newFindings: [],
+              source: 'quick-fix',
+              summary: fix.title || `Applied fix for ${finding.ruleId}`,
+            },
+            this.projectContext?.projectName,
+            this.getChangeManager()
+          );
           this.sidebarProvider?.refresh();
+          ProjectOverviewPanel.currentPanel?.refresh();
           this.inlineDecorationManager?.updateAllVisibleEditors();
           vscode.window.showInformationMessage(`CraftLens: Applied fix "${fix.title}".`);
         }
@@ -1755,7 +2055,24 @@ export class CommandManager {
           vscode.window.showInformationMessage('CraftLens: No issue selected to inspect.');
           return;
         }
+        if (finding.id) {
+          this.diagnosticsAdapter.getFindingStore().setSelectedIssueId(finding.id);
+        }
         this.detailPanelProvider?.showFinding(finding, section);
+      })
+    );
+
+    // 14b. Select Issue (Canonical Selection Sync)
+    this.disposables.push(
+      this.registerCmd('craftlens.selectIssue', (target?: any, secondArg?: any) => {
+        const finding = this.resolveFinding(target, secondArg);
+        const id = finding?.id || (typeof target === 'string' ? target : null);
+        if (id) {
+          this.diagnosticsAdapter.getFindingStore().setSelectedIssueId(id);
+        }
+        if (finding) {
+          this.detailPanelProvider?.showFinding(finding);
+        }
       })
     );
 
@@ -1832,6 +2149,91 @@ export class CommandManager {
           await vscode.window.showTextDocument(doc, { preview: false });
         } catch (err: any) {
           vscode.window.showErrorMessage(`CraftLens: Failed to open master checklist: ${err?.message || err}`);
+        }
+      })
+    );
+
+    // 19b. Open Issues Document (.craftlens/issues.md)
+    const openIssuesHandler = async () => {
+      try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          vscode.window.showWarningMessage('CraftLens: No active workspace folder open.');
+          return;
+        }
+        this.storageManager.ensureDir();
+        const issuesPath = path.join(this.storageManager.getDirectory(), 'issues.md');
+
+        if (!fs.existsSync(issuesPath)) {
+          const findings = this.diagnosticsAdapter.getFindingStore().getAllFindings();
+          const md = formatIssuesMarkdown(findings, this.projectContext?.projectName || 'Project');
+          this.storageManager.saveIssuesMarkdown(md);
+        }
+
+        const docUri = vscode.Uri.file(issuesPath);
+        const doc = await vscode.workspace.openTextDocument(docUri);
+        await vscode.window.showTextDocument(doc, { preview: false });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`CraftLens: Failed to open issues document: ${err?.message || err}`);
+      }
+    };
+    this.disposables.push(
+      this.registerCmd('craftlens.openIssuesFile', openIssuesHandler),
+      this.registerCmd('craftlens.openProblemsFile', openIssuesHandler)
+    );
+
+    // 19c. Open Suggestions Document (.craftlens/suggestions.md)
+    const openSuggestionsHandler = async () => {
+      try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          vscode.window.showWarningMessage('CraftLens: No active workspace folder open.');
+          return;
+        }
+        this.storageManager.ensureDir();
+        const suggestionsPath = path.join(this.storageManager.getDirectory(), 'suggestions.md');
+
+        if (!fs.existsSync(suggestionsPath)) {
+          const findings = this.diagnosticsAdapter.getFindingStore().getAllFindings();
+          const md = formatSuggestionsMarkdown(findings, this.projectContext?.projectName || 'Project');
+          this.storageManager.saveSuggestionsMarkdown(md);
+        }
+
+        const docUri = vscode.Uri.file(suggestionsPath);
+        const doc = await vscode.workspace.openTextDocument(docUri);
+        await vscode.window.showTextDocument(doc, { preview: false });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`CraftLens: Failed to open suggestions document: ${err?.message || err}`);
+      }
+    };
+    this.disposables.push(
+      this.registerCmd('craftlens.openSuggestionsFile', openSuggestionsHandler),
+      this.registerCmd('craftlens.openSuggestionFile', openSuggestionsHandler)
+    );
+
+    // 19d. Open User Changes Document (.craftlens/changes.md)
+    this.disposables.push(
+      this.registerCmd('craftlens.openChangesFile', async () => {
+        try {
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            vscode.window.showWarningMessage('CraftLens: No active workspace folder open.');
+            return;
+          }
+          this.storageManager.ensureDir();
+          const changesPath = path.join(this.storageManager.getDirectory(), 'changes.md');
+
+          if (!fs.existsSync(changesPath)) {
+            const userChanges = this.storageManager.loadUserChanges();
+            const md = formatUserChangesMarkdown(userChanges, this.projectContext?.projectName || 'Project', this.changeManager);
+            this.storageManager.saveChangesMarkdown(md);
+          }
+
+          const docUri = vscode.Uri.file(changesPath);
+          const doc = await vscode.workspace.openTextDocument(docUri);
+          await vscode.window.showTextDocument(doc, { preview: false });
+        } catch (err: any) {
+          vscode.window.showErrorMessage(`CraftLens: Failed to open changes document: ${err?.message || err}`);
         }
       })
     );
@@ -2277,6 +2679,300 @@ Provide detailed guidelines and instructions for CraftLens verification.
         this.sidebarProvider?.refresh();
         vscode.window.showInformationMessage('User rule group deleted.');
         await this.runAuditWithMode('full', 'file');
+      })
+    );
+
+    // 37. Show Project Context
+    this.disposables.push(
+      this.registerCmd('craftlens.showProjectContext', async () => {
+        const info = [
+          `Project: ${this.projectContext?.projectName || 'Workspace'}`,
+          `Framework: ${this.projectContext?.framework || 'Vanilla'}`,
+          `CSS Strategy: ${this.projectContext?.cssStrategy || 'None'}`,
+          `TypeScript: ${this.projectContext?.hasTypeScript ? 'Yes' : 'No'}`,
+        ].join(' | ');
+        vscode.window.showInformationMessage(`CraftLens Project Context: ${info}`, 'OK');
+      })
+    );
+
+    // 38. Create Change Plan
+    this.disposables.push(
+      this.registerCmd('craftlens.createChangePlan', async () => {
+        const categories = [
+          { label: '$(paintcan) Clean Up Design System', category: 'ui' },
+          { label: '$(shield) Fix Security Findings', category: 'security' },
+          { label: '$(eye) Fix Accessibility Gaps', category: 'accessibility' },
+          { label: '$(code) Improve Code Quality', category: 'code' },
+        ];
+        const picked = await vscode.window.showQuickPick(categories, {
+          placeHolder: 'Select a category to plan improvements:',
+        });
+        if (!picked) return;
+
+        const store = this.diagnosticsAdapter.getFindingStore();
+        const issueRegistry = store.getIssueRegistry();
+        const matchingIssues = issueRegistry.getOpenIssues().filter(i => {
+          if (picked.category === 'ui') return i.category === 'ui' || i.ruleId.startsWith('UI-');
+          if (picked.category === 'security') return i.category === 'security' || i.ruleId.startsWith('SEC-');
+          if (picked.category === 'accessibility') return i.category === 'accessibility' || i.ruleId.startsWith('AX-');
+          return true;
+        });
+
+        const changeManager = this.getChangeManager();
+        const issueIds = matchingIssues.map(i => i.id);
+        const plan = changeManager.createPlan(
+          picked.label.replace(/^\$\([^)]+\)\s*/, ''),
+          `Automated plan for ${picked.category} improvements`,
+          issueIds
+        );
+
+        for (const issue of matchingIssues) {
+          const chg = changeManager.createOrGetProposedChangeForIssue(issue);
+          if (chg && !plan.changeIds.includes(chg.id)) {
+            plan.changeIds.push(chg.id);
+          }
+        }
+
+        vscode.window.showInformationMessage(
+          `CraftLens: Created change plan "${plan.title}" with ${plan.changeIds.length} change(s).`
+        );
+        this.sidebarProvider?.refresh();
+      })
+    );
+
+    // 39. Review Change Plan
+    this.disposables.push(
+      this.registerCmd('craftlens.reviewChangePlan', async (changeIdArg?: string) => {
+        const changeManager = this.getChangeManager();
+        let changeId = changeIdArg;
+        if (!changeId) {
+          const pending = changeManager.getPendingChanges();
+          if (pending.length === 0) {
+            vscode.window.showInformationMessage('CraftLens: No pending changes to review.');
+            return;
+          }
+          const picked = await vscode.window.showQuickPick(
+            pending.map(c => ({ label: c.title, detail: `ID: ${c.id}`, id: c.id })),
+            { placeHolder: 'Select change to review:' }
+          );
+          if (!picked) return;
+          changeId = picked.id;
+        }
+
+        const change = changeManager.getChange(changeId);
+        if (!change || !change.files || change.files.length === 0) {
+          vscode.window.showWarningMessage('CraftLens: Change record has no files to review.');
+          return;
+        }
+
+        const file = change.files[0];
+        const originalUri = vscode.Uri.parse(`craftlens-preview://original/${path.basename(file.filePath)}`);
+        const modifiedUri = vscode.Uri.parse(`craftlens-preview://modified/${path.basename(file.filePath)}`);
+
+        this.previewProvider.setPreview(originalUri, file.originalContent || '');
+        this.previewProvider.setPreview(modifiedUri, file.newContent || '');
+
+        await vscode.commands.executeCommand(
+          'vscode.diff',
+          originalUri,
+          modifiedUri,
+          `Review: ${change.title} (${path.basename(file.filePath)})`
+        );
+      })
+    );
+
+    // 40. Approve Change
+    this.disposables.push(
+      this.registerCmd('craftlens.approveChange', async (changeIdArg?: string) => {
+        const changeManager = this.getChangeManager();
+        let changeId = changeIdArg;
+        if (!changeId) {
+          const proposed = changeManager.getAllChanges().filter(c => c.status === 'proposed' || c.status === 'review');
+          if (proposed.length === 0) {
+            vscode.window.showInformationMessage('CraftLens: No proposed changes to approve.');
+            return;
+          }
+          const picked = await vscode.window.showQuickPick(
+            proposed.map(c => ({ label: c.title, detail: `ID: ${c.id}`, id: c.id })),
+            { placeHolder: 'Select change to approve:' }
+          );
+          if (!picked) return;
+          changeId = picked.id;
+        }
+
+        const updated = changeManager.approveChange(changeId);
+        if (updated) {
+          const chg = changeManager.getChange(changeId);
+          vscode.window.showInformationMessage(`CraftLens: Change "${chg?.title || changeId}" approved.`);
+          this.sidebarProvider?.refresh();
+          ProjectOverviewPanel.currentPanel?.refresh();
+        }
+      })
+    );
+
+    // 41. Reject Change
+    this.disposables.push(
+      this.registerCmd('craftlens.rejectChange', async (changeIdArg?: string) => {
+        const changeManager = this.getChangeManager();
+        let changeId = changeIdArg;
+        if (!changeId) {
+          const pending = changeManager.getPendingChanges();
+          if (pending.length === 0) {
+            vscode.window.showInformationMessage('CraftLens: No pending changes to reject.');
+            return;
+          }
+          const picked = await vscode.window.showQuickPick(
+            pending.map(c => ({ label: c.title, detail: `ID: ${c.id}`, id: c.id })),
+            { placeHolder: 'Select change to reject:' }
+          );
+          if (!picked) return;
+          changeId = picked.id;
+        }
+
+        const updated = changeManager.rejectChange(changeId);
+        if (updated) {
+          const chg = changeManager.getChange(changeId);
+          vscode.window.showInformationMessage(`CraftLens: Change "${chg?.title || changeId}" rejected.`);
+          this.sidebarProvider?.refresh();
+          ProjectOverviewPanel.currentPanel?.refresh();
+        }
+      })
+    );
+
+    // 42. Apply Change
+    this.disposables.push(
+      this.registerCmd('craftlens.applyChange', async (changeIdArg?: string) => {
+        try {
+          const changeManager = this.getChangeManager();
+          const verificationEngine = this.getVerificationEngine();
+          let changeId = changeIdArg;
+          if (!changeId) {
+            const approvedList = changeManager.getAllChanges().filter(c => c.status === 'approved' || c.status === 'proposed');
+            if (approvedList.length === 0) {
+              vscode.window.showInformationMessage('CraftLens: No changes ready to apply.');
+              return;
+            }
+            const picked = await vscode.window.showQuickPick(
+              approvedList.map(c => ({ label: c.title, detail: `Status: ${c.status}`, id: c.id })),
+              { placeHolder: 'Select change to apply:' }
+            );
+            if (!picked) return;
+            changeId = picked.id;
+          }
+
+          // Apply change with transaction rollback safety
+          const applyRes = await changeManager.applyChange(changeId);
+          if (!applyRes.success) {
+            vscode.window.showErrorMessage(`CraftLens Apply Error: ${applyRes.error}`);
+            return;
+          }
+
+          // Run Verification Engine: Applied ≠ Verified
+          const verification = await verificationEngine.verifyChange(changeId);
+
+          const changeRecord = changeManager.getChange(changeId);
+          const relFiles = (changeRecord?.files || []).map(f => path.basename(f.filePath));
+          this.storageManager.appendUserChange(
+            {
+              id: changeRecord?.id || `change_${Date.now()}`,
+              timestamp: Date.now(),
+              filesChanged: relFiles,
+              resolvedFindings: (changeRecord?.issueIds || []).map(id => ({
+                ruleId: id,
+                message: changeRecord?.title || '',
+                filePath: relFiles[0] || '',
+              })),
+              newFindings: [],
+              source: 'change-plan',
+              summary: changeRecord?.title || `Applied change ${changeId}`,
+            },
+            this.projectContext?.projectName
+          );
+
+          if (verification.status === 'passed') {
+            vscode.window.showInformationMessage(
+              `CraftLens: Change applied & verified! (${verification.checks.length} check(s) passed). Issues marked resolved.`
+            );
+          } else {
+            vscode.window.showWarningMessage(
+              `CraftLens: Change applied, but verification status is "${verification.status}". Targeted checks did not all pass.`
+            );
+          }
+
+          this.sidebarProvider?.refresh();
+          ProjectOverviewPanel.currentPanel?.refresh();
+          this.inlineDecorationManager?.updateAllVisibleEditors();
+          vscode.commands.executeCommand('craftlens.scanCurrentFile');
+        } catch (err: any) {
+          vscode.window.showErrorMessage(`CraftLens: Apply failure: ${err?.message || 'Error'}`);
+        }
+      }),
+
+      // 43. Verify Change
+      this.registerCmd('craftlens.verifyChange', async (changeIdArg?: string) => {
+        try {
+          const changeManager = this.getChangeManager();
+          const verificationEngine = this.getVerificationEngine();
+          let changeId = changeIdArg;
+          if (!changeId) {
+            const appliedList = changeManager.getAllChanges().filter(c => c.status === 'applied');
+            if (appliedList.length === 0) {
+              vscode.window.showInformationMessage('CraftLens: No applied changes awaiting verification.');
+              return;
+            }
+            const picked = await vscode.window.showQuickPick(
+              appliedList.map(c => ({ label: c.title, detail: `Status: ${c.status}`, id: c.id })),
+              { placeHolder: 'Select change to verify:' }
+            );
+            if (!picked) return;
+            changeId = picked.id;
+          }
+
+          const verification = await verificationEngine.verifyChange(changeId);
+          const passedCount = verification.checks.filter(c => c.status === 'passed').length;
+          const totalCount = verification.checks.length;
+
+          if (verification.status === 'passed') {
+            vscode.window.showInformationMessage(`CraftLens Verification Passed: ${passedCount}/${totalCount} checks passed.`);
+          } else {
+            vscode.window.showWarningMessage(`CraftLens Verification Result: ${verification.status} (${passedCount}/${totalCount} checks passed).`);
+          }
+          this.sidebarProvider?.refresh();
+        } catch (err: any) {
+          vscode.window.showErrorMessage(`CraftLens: Verification error: ${err?.message || 'Error'}`);
+        }
+      }),
+
+      // 44. Revert Change
+      this.registerCmd('craftlens.revertChange', async (changeIdArg?: string) => {
+        try {
+          const changeManager = this.getChangeManager();
+          let changeId = changeIdArg;
+          if (!changeId) {
+            const applied = changeManager.getAllChanges().filter(c => c.status === 'applied' || c.status === 'verified' || c.status === 'failed');
+            if (applied.length === 0) {
+              vscode.window.showInformationMessage('CraftLens: No applied changes to revert.');
+              return;
+            }
+            const picked = await vscode.window.showQuickPick(
+              applied.map(c => ({ label: c.title, detail: `Status: ${c.status}`, id: c.id })),
+              { placeHolder: 'Select change to revert:' }
+            );
+            if (!picked) return;
+            changeId = picked.id;
+          }
+
+          const res = await changeManager.revertChange(changeId);
+          if (res.success) {
+            vscode.window.showInformationMessage('CraftLens: Successfully reverted change.');
+            this.sidebarProvider?.refresh();
+            vscode.commands.executeCommand('craftlens.scanCurrentFile');
+          } else {
+            vscode.window.showErrorMessage(`CraftLens Revert Error: ${res.error}`);
+          }
+        } catch (err: any) {
+          vscode.window.showErrorMessage(`CraftLens: Revert error: ${err?.message || 'Error'}`);
+        }
       })
     );
   }

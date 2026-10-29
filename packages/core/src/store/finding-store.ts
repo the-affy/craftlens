@@ -9,10 +9,15 @@ import {
   FindingSeverity,
   AuditState,
   SkillVersion,
+  issueToFinding,
+  findingToIssue,
 } from '../types/index.js';
 import { Severity } from '../types/severity.js';
 import { SidebarFinding } from '../types/sidebar-finding.js';
 import { clusterFindingsToSidebarFindings } from '../analyzer/finding-clusterer.js';
+import { IssueRegistry, IssueRegistryChangeEvent } from '../issue-registry/issue-registry.js';
+import { ScanScope } from '../issue-registry/reconciliation.js';
+import { FixCapability, resolveFixCapability } from '../types/fix.js';
 
 export interface FindingStoreChangeEvent {
   filePath?: string;
@@ -49,74 +54,56 @@ export interface FindingFilterOptions {
 }
 
 export class FindingStore {
+  private issueRegistry: IssueRegistry;
   private findingsByFile = new Map<string, Finding[]>();
   private listeners: ((event: FindingStoreChangeEvent) => void)[] = [];
+  private selectedIssueId: string | null = null;
+  private selectionListeners: ((issueId: string | null) => void)[] = [];
+  private fixCapabilityCache = new Map<string, FixCapability>();
 
-  /**
-   * Sets findings for a specific file, performing deduplication and identity tracking.
-   */
-  public setFindingsForFile(filePath: string, newFindings: Finding[]): FindingStoreChangeEvent {
-    const oldFindings = this.findingsByFile.get(filePath) || [];
-    const oldByFingerprint = new Map<string, Finding>();
-    const oldByStructural = new Map<string, Finding>();
+  constructor(issueRegistry?: IssueRegistry) {
+    this.issueRegistry = issueRegistry || new IssueRegistry();
+    this.syncFromRegistry();
 
-    for (const f of oldFindings) {
-      if (f.fingerprint) {
-        oldByFingerprint.set(f.fingerprint, f);
-      }
-      const structKey = computeStructuralFingerprint(f);
-      oldByStructural.set(structKey, f);
-    }
+    this.issueRegistry.onDidChange((e) => {
+      this.syncFromRegistry();
+    });
+  }
 
-    const added: Finding[] = [];
-    const unchanged: Finding[] = [];
-    const moved: Finding[] = [];
-    const finalFindings: Finding[] = [];
-    const seenFingerprints = new Set<string>();
+  public getIssueRegistry(): IssueRegistry {
+    return this.issueRegistry;
+  }
 
-    for (const raw of newFindings) {
-      const rawFinding = ensureFindingCanonical(raw);
-      // Ensure fingerprint
-      const fingerprint = rawFinding.fingerprint || computeFindingFingerprint(rawFinding);
-      rawFinding.fingerprint = fingerprint;
-
-      // Deduplicate if identical finding in same file
-      if (seenFingerprints.has(fingerprint)) {
+  private syncFromRegistry(): void {
+    const byFile = new Map<string, Finding[]>();
+    for (const issue of this.issueRegistry.getAllIssues()) {
+      if (issue.status === 'resolved' || issue.status === 'ignored') {
         continue;
       }
-      seenFingerprints.add(fingerprint);
-
-      if (oldByFingerprint.has(fingerprint)) {
-        // Exact match: unchanged finding, preserve identity
-        const existing = oldByFingerprint.get(fingerprint)!;
-        unchanged.push(existing);
-        finalFindings.push(existing);
-      } else {
-        const structKey = computeStructuralFingerprint(rawFinding);
-        if (oldByStructural.has(structKey)) {
-          // Moved finding (line or character shifted)
-          moved.push(rawFinding);
-        } else {
-          // Genuinely new finding
-          added.push(rawFinding);
-        }
-        finalFindings.push(rawFinding);
+      const f = issueToFinding(issue);
+      const fp = f.filePath || f.location?.filePath || 'unknown';
+      let list = byFile.get(fp);
+      if (!list) {
+        list = [];
+        byFile.set(fp, list);
       }
+      list.push(f);
     }
+    this.findingsByFile = byFile;
+  }
 
-    // Determine removed findings
-    const removed: Finding[] = [];
-    for (const f of oldFindings) {
-      if (f.fingerprint && !seenFingerprints.has(f.fingerprint)) {
-        const structKey = computeStructuralFingerprint(f);
-        const wasMoved = moved.some(m => computeStructuralFingerprint(m) === structKey);
-        if (!wasMoved) {
-          removed.push(f);
-        }
-      }
-    }
+  /**
+   * Sets findings for a specific file, performing deduplication and reconciliation via IssueRegistry.
+   */
+  public setFindingsForFile(filePath: string, newFindings: Finding[]): FindingStoreChangeEvent {
+    const scope: ScanScope = { type: 'file', filePath };
+    const result = this.issueRegistry.reconcile(scope, newFindings);
+    this.syncFromRegistry();
 
-    this.findingsByFile.set(filePath, finalFindings);
+    const added = result.added.map(issueToFinding);
+    const removed = result.resolved.map(issueToFinding);
+    const unchanged = result.unmodified.map(issueToFinding);
+    const moved = result.updated.map(issueToFinding);
 
     const totalCount = this.getTotalCount();
     const event: FindingStoreChangeEvent = {
@@ -156,26 +143,74 @@ export class FindingStore {
       ? findingOrFingerprint
       : (findingOrFingerprint.fingerprint || (findingOrFingerprint.location ? computeFindingFingerprint(findingOrFingerprint) : undefined));
     if (!targetFingerprint) return false;
+    const issue = this.issueRegistry.getIssueByFingerprint(targetFingerprint) || this.issueRegistry.getIssue(targetFingerprint);
+    if (issue && issue.status !== 'resolved' && issue.status !== 'ignored') {
+      return true;
+    }
     for (const list of this.findingsByFile.values()) {
-      if (list.some(f => (f.fingerprint || computeFindingFingerprint(f)) === targetFingerprint)) {
-        return true;
-      }
+      const match = list.some(f => (f.fingerprint || computeFindingFingerprint(f)) === targetFingerprint || f.id === targetFingerprint);
+      if (match) return true;
     }
     return false;
   }
 
   public getFindingById(idOrFingerprint: string): Finding | undefined {
     if (!idOrFingerprint) return undefined;
+    const issue = this.issueRegistry.getIssue(idOrFingerprint) || this.issueRegistry.getIssueByFingerprint(idOrFingerprint);
+    if (issue && issue.status !== 'resolved' && issue.status !== 'ignored') {
+      return issueToFinding(issue);
+    }
     for (const list of this.findingsByFile.values()) {
-      const match = list.find(f => (f.fingerprint || computeFindingFingerprint(f)) === idOrFingerprint);
+      const match = list.find(f => (f.fingerprint || computeFindingFingerprint(f)) === idOrFingerprint || f.id === idOrFingerprint);
       if (match) return match;
     }
     return undefined;
   }
 
+  public removeFinding(id: string): void {
+    const issue = this.issueRegistry.getIssue(id) || this.issueRegistry.getIssueByFingerprint(id);
+    if (issue) {
+      this.issueRegistry.updateIssue(issue.id, { status: 'resolved' });
+      this.syncFromRegistry();
+      const removedFinding = issueToFinding(issue);
+      this.emitChange({
+        filePath: issue.location?.filePath || '',
+        totalFindings: this.getTotalCount(),
+        currentTotal: this.getTotalCount(),
+        added: [],
+        removed: [removedFinding],
+        resolved: [removedFinding],
+        unchanged: [],
+        moved: [],
+      });
+      return;
+    }
+    for (const [filePath, list] of this.findingsByFile.entries()) {
+      const idx = list.findIndex(f => f.id === id || f.fingerprint === id);
+      if (idx !== -1) {
+        const [removedFinding] = list.splice(idx, 1);
+        this.emitChange({
+          filePath,
+          totalFindings: this.getTotalCount(),
+          currentTotal: this.getTotalCount(),
+          added: [],
+          removed: [removedFinding],
+          resolved: [removedFinding],
+          unchanged: [],
+          moved: [],
+        });
+        return;
+      }
+    }
+  }
+
   public clearFile(filePath: string): void {
     const removed = this.findingsByFile.get(filePath) || [];
     this.findingsByFile.delete(filePath);
+    // Mark issues in file as resolved or re-reconcile empty
+    this.issueRegistry.reconcile({ type: 'file', filePath }, []);
+    this.syncFromRegistry();
+
     this.emitChange({
       filePath,
       totalFindings: this.getTotalCount(),
@@ -188,6 +223,7 @@ export class FindingStore {
 
   public clearAll(): void {
     this.findingsByFile.clear();
+    this.issueRegistry.clear();
     this.emitChange({
       totalFindings: 0,
       added: [],
@@ -309,7 +345,7 @@ export class FindingStore {
             f.message.toLowerCase().includes(s) ||
             (f.whatIsWrong && f.whatIsWrong.toLowerCase().includes(s)) ||
             (f.problemTitle && f.problemTitle.toLowerCase().includes(s)) ||
-            f.location.filePath.toLowerCase().includes(s);
+            (f.location?.filePath && f.location.filePath.toLowerCase().includes(s));
           if (!matches) continue;
         }
 
@@ -348,7 +384,6 @@ export class FindingStore {
     }
 
     return Array.from(groupsMap.values()).sort((a, b) => {
-      // Sort errors first, then warnings, then suggestions, then by count descending
       const sevWeight = (s: Severity) => (s === 'blocker' || s === 'error' ? 3 : s === 'warning' ? 2 : 1);
       const diff = sevWeight(b.severity) - sevWeight(a.severity);
       if (diff !== 0) return diff;
@@ -392,30 +427,8 @@ export class FindingStore {
   /**
    * Constructs the single canonical AuditState from current findings in memory.
    */
-  public getAuditState(engineVersion: string = '1.0.0', skillVersions: SkillVersion[] = []): AuditState {
-    const findings = this.getCanonicalFindings();
-    const instances = findings.flatMap(f => f.instances && f.instances.length > 0 ? f.instances : []);
-    const counts = this.getCountsByCanonicalSeverity();
-
-    // Secondary health score derived directly from findings:
-    // Base 100 - (critical * 25 + high * 8 + medium * 3 + low * 1)
-    let score = 100;
-    score -= counts.critical * 25;
-    score -= counts.high * 8;
-    score -= counts.medium * 3;
-    score -= counts.low * 1;
-    score = Math.max(0, Math.min(100, score));
-
-    return {
-      status: 'complete',
-      findings,
-      instances,
-      score: findings.length === 0 ? 100 : score,
-      startedAt: Date.now(),
-      completedAt: Date.now(),
-      engineVersion,
-      skillVersions,
-    };
+  public getAuditState(engineVersion: string = '2.0.0', skillVersions: SkillVersion[] = []): AuditState {
+    return this.issueRegistry.exportAuditState(engineVersion, skillVersions);
   }
 
   public getCountsByCanonicalSeverity(): Record<FindingSeverity, number> {
@@ -471,7 +484,6 @@ export class FindingStore {
     return groups;
   }
 
-
   public onDidChange(listener: (event: FindingStoreChangeEvent) => void): () => void {
     this.listeners.push(listener);
     return () => {
@@ -482,7 +494,60 @@ export class FindingStore {
     };
   }
 
+  public getSelectedIssueId(): string | null {
+    return this.selectedIssueId;
+  }
+
+  public setSelectedIssueId(issueId: string | null): void {
+    if (this.selectedIssueId === issueId) return;
+    this.selectedIssueId = issueId;
+    for (const listener of this.selectionListeners) {
+      try {
+        listener(issueId);
+      } catch (err) {
+        console.error('Error in FindingStore selection listener:', err);
+      }
+    }
+  }
+
+  public onDidSelectIssue(listener: (issueId: string | null) => void): () => void {
+    this.selectionListeners.push(listener);
+    return () => {
+      const idx = this.selectionListeners.indexOf(listener);
+      if (idx !== -1) {
+        this.selectionListeners.splice(idx, 1);
+      }
+    };
+  }
+
+  public getFixCapability(findingOrIssue: any, projectContext?: any, skillManager?: any): FixCapability {
+    if (!findingOrIssue) {
+      return resolveFixCapability(null);
+    }
+    const issueId = findingOrIssue.id || findingOrIssue.ruleId || findingOrIssue.fingerprint;
+    if (issueId && this.fixCapabilityCache.has(issueId)) {
+      return this.fixCapabilityCache.get(issueId)!;
+    }
+    const cap = resolveFixCapability(findingOrIssue, skillManager, projectContext);
+    if (issueId) {
+      this.fixCapabilityCache.set(issueId, cap);
+    }
+    return cap;
+  }
+
+  public invalidateFixCapabilityCache(issueId?: string): void {
+    if (issueId) {
+      this.fixCapabilityCache.delete(issueId);
+    } else {
+      this.fixCapabilityCache.clear();
+    }
+  }
+
   private emitChange(event: FindingStoreChangeEvent): void {
+    this.invalidateFixCapabilityCache();
+    if (this.selectedIssueId && !this.hasFinding(this.selectedIssueId)) {
+      this.setSelectedIssueId(null);
+    }
     for (const l of this.listeners) {
       try {
         l(event);
