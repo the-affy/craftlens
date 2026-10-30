@@ -3,13 +3,15 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "composite": false,
+    "noEmit": true
   },
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/parser" },
     { "path": "../../packages/config" },
+    { "path": "../../packages/design-intelligence" },
     { "path": "../../packages/rule-engine" }
   ],
   "include": ["src/**/*"]

@@ -18,13 +18,13 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run --workspaces build",
+    "build": "node scripts/build.js",
+    "compile": "node scripts/build.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --build",
-    "compile": "npm run --workspaces build",
     "package": "node scripts/package-extension.js",
-    "clean": "npm run --workspaces clean && rm -rf dist *.vsix"
+    "clean": "node scripts/clean.js"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

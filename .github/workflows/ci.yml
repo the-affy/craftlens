@@ -31,12 +31,11 @@ jobs:
       - name: Run Typecheck
         run: npm run typecheck
 
-      - name: Run Test Suite
-        run: npm test
-
       - name: Build Workspaces
         run: npm run build
 
+      - name: Run Test Suite
+        run: npm test
+
       - name: Verify Packaging
         run: npm run package -- --no-bump
-
