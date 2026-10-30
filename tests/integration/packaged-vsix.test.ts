@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 describe('Packaged VSIX Verification', () => {
   const rootDir = path.resolve(__dirname, '../..');
@@ -13,8 +13,8 @@ describe('Packaged VSIX Verification', () => {
       fs.rmSync(vsixPath, { force: true });
     }
 
-    // Invoke the real packaging process
-    execSync('node scripts/package-extension.js --no-bump', {
+    // Invoke the real packaging process using execFileSync with argument array
+    execFileSync('node', ['scripts/package-extension.js', '--no-bump'], {
       cwd: rootDir,
       stdio: 'inherit',
       timeout: 60000,
@@ -28,7 +28,8 @@ describe('Packaged VSIX Verification', () => {
   });
 
   it('verifies the internal archive structure and required resources of the packaged VSIX', () => {
-    const fileList = execSync(`tar -tf "${vsixPath}"`, { encoding: 'utf-8' });
+    // VSIX is a ZIP archive; use unzip -Z1 across platforms
+    const fileList = execFileSync('unzip', ['-Z1', vsixPath], { encoding: 'utf-8' });
 
     // Core extension manifests and bundle
     expect(fileList).toContain('extension/package.json');
@@ -53,7 +54,8 @@ describe('Packaged VSIX Verification', () => {
     fs.mkdirSync(tempExtractDir, { recursive: true });
 
     try {
-      execSync(`tar -xf "${vsixPath}" -C "${tempExtractDir}"`);
+      // VSIX is a ZIP archive; extract via unzip -q -d across platforms
+      execFileSync('unzip', ['-q', vsixPath, '-d', tempExtractDir]);
 
       const bundledExtJsPath = path.join(tempExtractDir, 'extension', 'dist', 'extension.js');
       expect(fs.existsSync(bundledExtJsPath)).toBe(true);
