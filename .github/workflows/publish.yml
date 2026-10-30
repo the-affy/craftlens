@@ -10,10 +10,11 @@ permissions:
 
 jobs:
   publish:
+    name: Build and Publish Extension
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout release
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -25,8 +26,37 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Run tests
+        run: npm test
 
-      - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --oidc
+      - name: Package extension
+        run: npm run package -- --release
+
+      - name: Read extension version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./apps/vscode-extension/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "CraftLens version: $VERSION"
+
+      - name: Verify VSIX
+        shell: bash
+        run: |
+          VSIX="craftlens-${{ steps.version.outputs.version }}.vsix"
+
+          if [ ! -f "$VSIX" ]; then
+            echo "Expected VSIX not found: $VSIX"
+            echo "Available VSIX files:"
+            ls -lah *.vsix 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "VSIX found:"
+          ls -lh "$VSIX"
+
+      - name: Publish to Visual Studio Marketplace
+        run: |
+          npx @vscode/vsce publish \
+            --oidc \
+            --packagePath "craftlens-${{ steps.version.outputs.version }}.vsix"

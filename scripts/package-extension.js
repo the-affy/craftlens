@@ -107,7 +107,7 @@ execSync('npm run build', {
 
 // 7. Generate VSIX via vsce
 const vsixName = `craftlens-${newVersion}.vsix`;
-const extVsixPath = path.resolve(extDistDir, vsixName);
+const extVsixPath = path.resolve(rootDir, vsixName);
 const rootVsixPath = path.resolve(rootDir, vsixName);
 const rootLatestVsixPath = path.resolve(rootDir, 'craftlens.vsix');
 
